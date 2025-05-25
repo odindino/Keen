@@ -1,0 +1,17 @@
+name: keen
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.12
+  - numpy>=1.24.0
+  - plotly>=5.17.0
+  - scipy>=1.10.0
+  - matplotlib>=3.7.0
+  - pandas>=2.0.0
+  - pip
+  - pip:
+    # 開發工具 (可選，需要時取消註解)
+    - pytest>=7.4.0
+    - black>=23.0.0
+    - flake8>=6.0.0
