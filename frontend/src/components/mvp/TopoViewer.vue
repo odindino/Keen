@@ -67,22 +67,22 @@ const error = computed(() => mvpStore.error)
 
 // 監聽數據變化
 watch(currentData, async (newData) => {
-  if (newData) {
+  if (newData && newData.plotlyConfig) {
     await nextTick()
-    await createPlotlyChart(newData)
+    await createPlotlyChart(newData.plotlyConfig)
   }
 }, { immediate: true })
 
 // 監聽 colormap 變化
-watch(() => currentData.value?.colormap, (newColormap) => {
-  if (newColormap && currentData.value && plotlyInstance) {
+watch(() => currentData.value?.colormap, async (newColormap, oldColormap) => {
+  if (newColormap && newColormap !== oldColormap && currentData.value) {
     console.log('MVP TopoViewer: 色彩映射變更為:', newColormap)
-    updatePlotlyColormap(currentData.value)
+    await updateColormap(newColormap)
   }
 })
 
-// 創建 Plotly 圖表
-async function createPlotlyChart(data: any) {
+// 創建 Plotly 圖表（直接使用後端配置）
+async function createPlotlyChart(plotlyConfig: any) {
   if (!plotlyContainer.value) {
     console.warn('MVP TopoViewer: plotlyContainer 不存在')
     return
@@ -97,89 +97,10 @@ async function createPlotlyChart(data: any) {
       plotlyInstance = null
     }
 
-    const { rawData, dimensions, colormap, physUnit } = data
+    const { data, layout, config } = plotlyConfig
 
-    // 創建坐標軸
-    const x = Array.from({ length: dimensions.width }, (_, i) => 
-      (i * dimensions.xRange) / dimensions.width
-    )
-    const y = Array.from({ length: dimensions.height }, (_, i) => 
-      (i * dimensions.yRange) / dimensions.height
-    )
-
-    // 獲取色彩映射
-    const plotlyColorscale = getPlotlyColorscale(colormap)
-    
-    // 計算 Z 值範圍用於色彩條
-    const flatZ = rawData.flat()
-    const zMin = Math.min(...flatZ)
-    const zMax = Math.max(...flatZ)
-
-    // 創建圖表數據
-    const plotData = [{
-      z: rawData,
-      x: x,
-      y: y,
-      type: 'heatmap' as const,
-      colorscale: plotlyColorscale,
-      showscale: true,
-      zmin: zMin,
-      zmax: zMax,
-      colorbar: {
-        title: {
-          text: `高度 (${physUnit})`,
-          side: 'right'
-        },
-        thickness: 20,
-        len: 0.8,
-        x: 1.02
-      },
-      hovertemplate: 
-        'X: %{x:.2f} ' + physUnit + '<br>' +
-        'Y: %{y:.2f} ' + physUnit + '<br>' +
-        'Z: %{z:.3f} ' + physUnit + '<br>' +
-        '<extra></extra>'
-    }]
-
-    // 設置布局
-    const layout = {
-      title: '',
-      xaxis: {
-        title: { text: `X (${physUnit})` },
-        constrain: 'domain',
-        showgrid: true,
-        gridcolor: '#e5e5e5',
-        range: [0, dimensions.xRange]
-      },
-      yaxis: {
-        title: { text: `Y (${physUnit})` },
-        scaleanchor: 'x',
-        scaleratio: 1,
-        constrain: 'domain',
-        showgrid: true,
-        gridcolor: '#e5e5e5',
-        range: [0, dimensions.yRange]
-      },
-      margin: { l: 60, r: 80, t: 20, b: 60 },
-      autosize: true,
-      plot_bgcolor: 'white',
-      paper_bgcolor: 'white'
-    }
-
-    const config = {
-      responsive: true,
-      displayModeBar: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: [
-        'sendDataToCloud', 
-        'editInChartStudio',
-        'lasso2d',
-        'select2d'
-      ]
-    }
-
-    // 創建圖表
-    await Plotly.newPlot(plotlyContainer.value, plotData, layout, config)
+    // 直接使用後端生成的配置創建圖表
+    await Plotly.newPlot(plotlyContainer.value, data, layout, config)
     plotlyInstance = plotlyContainer.value
 
     console.log('MVP TopoViewer: Plotly 圖表創建成功')
@@ -189,58 +110,31 @@ async function createPlotlyChart(data: any) {
   }
 }
 
-// 更新 Plotly 色彩映射
-async function updatePlotlyColormap(data: any) {
-  if (!plotlyInstance) {
-    console.warn('MVP TopoViewer: plotlyInstance 不存在，無法更新色彩映射')
-    return
-  }
+// 更新色彩映射（通過後端）
+async function updateColormap(newColormap: string) {
+  if (!currentData.value) return
 
   try {
-    const newColorscale = getPlotlyColorscale(data.colormap)
+    console.log('MVP TopoViewer: 請求更新色彩映射:', newColormap)
     
-    const update = {
-      colorscale: [newColorscale]
-    }
+    // 調用後端 API 更新色彩映射
+    const result = await window.pywebview.api.update_colormap(
+      currentData.value.txtFile,
+      currentData.value.intFile,
+      newColormap
+    )
 
-    await Plotly.restyle(plotlyInstance, update, 0)
-    console.log('MVP TopoViewer: 色彩映射更新成功:', data.colormap)
+    if (result.success) {
+      // 使用新的 Plotly 配置重新創建圖表
+      await createPlotlyChart(result.plotlyConfig)
+      console.log('MVP TopoViewer: 色彩映射更新成功')
+    } else {
+      throw new Error(result.error || '更新色彩映射失敗')
+    }
   } catch (error) {
     console.error('MVP TopoViewer: 更新色彩映射失敗:', error)
-    // 如果更新失敗，重新創建圖表
-    await createPlotlyChart(data)
+    mvpStore.setError('更新色彩映射失敗: ' + error)
   }
-}
-
-// 獲取 Plotly 色彩映射
-function getPlotlyColorscale(colormap: string) {
-  // 簡化的色彩映射處理
-  const colormapMapping: Record<string, string> = {
-    'Oranges': 'Oranges',
-    'Blues': 'Blues', 
-    'Reds': 'Reds',
-    'Greens': 'Greens',
-    'Purples': 'Purples',
-    'Greys': 'Greys',
-    'viridis': 'Viridis',
-    'plasma': 'Plasma',
-    'inferno': 'Inferno',
-    'magma': 'Magma'
-  }
-
-  // 處理反轉色彩映射
-  if (colormap.endsWith('_r')) {
-    const baseColormap = colormap.slice(0, -2)
-    const basePlotlyColorscale = colormapMapping[baseColormap]
-    
-    if (basePlotlyColorscale) {
-      // 對於反轉映射，我們使用 Plotly 的內建反轉
-      // 這是簡化實現，可以後續改進
-      return basePlotlyColorscale
-    }
-  }
-
-  return colormapMapping[colormap] || 'Viridis'
 }
 
 // 組件卸載時清理

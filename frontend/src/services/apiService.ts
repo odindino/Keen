@@ -20,7 +20,7 @@ export async function loadSPMFile(txtFilePath: string): Promise<SPMData> {
       name: result.name || extractFileName(txtFilePath),
       txtFile: txtFilePath,
       intFile: result.intFile,
-      rawData: result.rawData,
+      plotlyConfig: result.plotlyConfig,  // 新增：Plotly 配置
       colormap: result.colormap || 'Oranges',
       dimensions: {
         width: result.dimensions.width,
@@ -41,29 +41,6 @@ export async function loadSPMFile(txtFilePath: string): Promise<SPMData> {
     return data
   } catch (error) {
     console.error('API Service: 載入 SPM 檔案失敗:', error)
-    throw error
-  }
-}
-
-/**
- * 更新色彩映射 (MVP 版本暫時不需要後端處理)
- */
-export async function updateColormap(intFilePath: string, colormap: string): Promise<{
-  rawData: number[][]
-  statistics: any
-}> {
-  try {
-    console.log('API Service: 更新色彩映射 (MVP - 僅前端處理):', { intFilePath, colormap })
-    
-    // 在 MVP 版本中，色彩映射變更純粹由前端 Plotly 處理
-    // 這裡只是為了保持介面一致性，實際上不會調用後端
-    
-    return {
-      rawData: [], // 空數組，表示不需要更新原始數據
-      statistics: {} // 空對象，表示統計資料不變
-    }
-  } catch (error) {
-    console.error('API Service: 更新色彩映射失敗:', error)
     throw error
   }
 }
@@ -92,7 +69,8 @@ declare global {
           success: boolean
           name?: string
           intFile?: string
-          rawData?: number[][]
+          txtFile?: string
+          plotlyConfig?: any  // Plotly 配置對象
           colormap?: string
           dimensions?: {
             width: number
@@ -109,10 +87,10 @@ declare global {
           }
           error?: string
         }>
-        update_colormap(intPath: string, colormap: string): Promise<{
+        update_colormap(txtPath: string, intPath: string, colormap: string): Promise<{
           success: boolean
-          rawData?: number[][]
-          statistics?: any
+          plotlyConfig?: any  // 更新後的 Plotly 配置
+          colormap?: string
           error?: string
         }>
       }

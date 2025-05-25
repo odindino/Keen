@@ -1,12 +1,12 @@
 // stores/mvpStore.ts
-import { ref, reactive } from 'vue'
+import { reactive } from 'vue'
 
 export interface SPMData {
   id: string
   name: string
   txtFile: string
   intFile: string
-  rawData: number[][]
+  plotlyConfig: any  // 新增：Plotly 配置（data + layout + config）
   colormap: string
   dimensions: {
     width: number

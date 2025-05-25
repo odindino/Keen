@@ -2,6 +2,11 @@ import os
 import logging
 import webview
 import numpy as np
+import plotly.graph_objects as go
+import plotly.io as pio
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import to_hex
 
 # 設置日誌
 logging.basicConfig(
@@ -52,7 +57,7 @@ class SPMAnalyzerMVP:
             }
     
     def load_spm_file(self, txt_file_path):
-        """載入 SPM 檔案（TXT + INT）"""
+        """載入 SPM 檔案並生成 Plotly JSON 配置"""
         try:
             logger.info(f"開始載入 SPM 檔案: {txt_file_path}")
             
@@ -91,12 +96,19 @@ class SPMAnalyzerMVP:
             logger.info("計算統計資訊")
             statistics = self._calculate_statistics(raw_data)
             
-            # 7. 準備回傳數據
+            # 7. 生成 Plotly JSON 配置
+            logger.info("生成 Plotly 配置")
+            plotly_config = self._generate_plotly_config(
+                raw_data, x_range, y_range, phys_unit, "Oranges"
+            )
+            
+            # 8. 準備回傳數據
             result = {
                 "success": True,
                 "name": os.path.basename(txt_file_path),
                 "intFile": int_file_path,
-                "rawData": raw_data.tolist(),
+                "txtFile": txt_file_path,
+                "plotlyConfig": plotly_config,  # Plotly 配置（data + layout）
                 "colormap": "Oranges",
                 "dimensions": {
                     "width": x_pixels,
@@ -120,21 +132,216 @@ class SPMAnalyzerMVP:
             logger.error(f"詳細錯誤: {traceback.format_exc()}")
             return {"success": False, "error": error_msg}
     
-    def update_colormap(self, int_file_path, colormap):
-        """更新色彩映射（MVP 版本暫不實際處理）"""
+    def update_colormap(self, txt_file_path, int_file_path, colormap):
+        """更新色彩映射並重新生成 Plotly 配置"""
         try:
-            logger.info(f"收到色彩映射更新請求: {colormap} (MVP 版本僅前端處理)")
+            logger.info(f"更新色彩映射為: {colormap}")
             
-            # 在 MVP 版本中，色彩映射變更完全由前端處理
+            # 重新解析數據
+            parameters = self._parse_txt_file(txt_file_path)
+            scale, phys_unit, x_pixels, y_pixels, x_range, y_range = self._extract_parameters(
+                parameters, int_file_path
+            )
+            raw_data = self._parse_int_file(int_file_path, scale, x_pixels, y_pixels)
+            
+            # 使用新的色彩映射生成 Plotly 配置
+            logger.info(f"重新生成 Plotly 配置，使用色彩映射: {colormap}")
+            plotly_config = self._generate_plotly_config(
+                raw_data, x_range, y_range, phys_unit, colormap
+            )
+            
             return {
                 "success": True,
-                "message": "MVP 版本中色彩映射由前端處理"
+                "plotlyConfig": plotly_config,
+                "colormap": colormap
             }
             
         except Exception as e:
-            logger.error(f"處理色彩映射更新時出錯: {str(e)}")
+            logger.error(f"更新色彩映射時出錯: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    def _matplotlib_to_plotly_colorscale(self, cmap_name, reverse=False, n_colors=256):
+        """將 matplotlib colormap 轉換為 Plotly colorscale 格式"""
+        try:
+            # 獲取 matplotlib colormap
+            cmap = cm.get_cmap(cmap_name)
+            
+            # 生成顏色點
+            colors = []
+            for i in range(n_colors):
+                # 計算 0-1 之間的位置
+                position = i / (n_colors - 1)
+                
+                # 如果需要反轉，則反轉位置
+                if reverse:
+                    color_position = 1.0 - position
+                else:
+                    color_position = position
+                
+                # 獲取該位置的顏色 (RGBA)
+                rgba = cmap(color_position)
+                
+                # 轉換為十六進位顏色
+                hex_color = to_hex(rgba[:3])  # 只使用 RGB，忽略 Alpha
+                
+                # Plotly colorscale 格式：[position, color]
+                colors.append([position, hex_color])
+            
+            reverse_info = " (反轉)" if reverse else ""
+            logger.info(f"matplotlib colormap '{cmap_name}'{reverse_info} 轉換完成，生成 {len(colors)} 個顏色點")
+            return colors
+            
+        except Exception as e:
+            logger.error(f"轉換 matplotlib colormap 失敗: {str(e)}")
+            # 回退到簡單的灰階
+            return [[0, '#000000'], [1, '#ffffff']]
+    
+    def _generate_plotly_config(self, raw_data, x_range, y_range, phys_unit, colormap):
+        """生成 Plotly 的 data 和 layout 配置"""
+        try:
+            # 創建坐標軸
+            y_pixels, x_pixels = raw_data.shape
+            x = np.linspace(0, x_range, x_pixels).tolist()
+            y = np.linspace(0, y_range, y_pixels).tolist()
+            
+            # 擴展的 matplotlib colormap 映射
+            matplotlib_colormap_mapping = {
+                # 單色系
+                'Oranges': 'Oranges',
+                'Blues': 'Blues',
+                'Reds': 'Reds',
+                'Greens': 'Greens',
+                'Purples': 'Purples',
+                'Greys': 'gray',
+                
+                # 科學可視化
+                'Viridis': 'viridis',
+                'Plasma': 'plasma',
+                'Inferno': 'inferno',
+                'Magma': 'magma',
+                'Cividis': 'cividis',
+                
+                # 分歧色彩映射
+                'RdYlBu': 'RdYlBu',
+                'RdYlGn': 'RdYlGn',
+                'Spectral': 'Spectral',
+                'Coolwarm': 'coolwarm',
+                
+                # 彩虹和經典
+                'Rainbow': 'rainbow',
+                'Jet': 'jet',
+                'Hot': 'hot',
+                'Cool': 'cool',
+                
+                # 地形和其他
+                'Terrain': 'terrain',
+                'Ocean': 'ocean',
+                'Copper': 'copper',
+            }
+            
+            # 檢查是否需要反轉
+            reverse = False
+            if colormap.endswith('_r'):
+                reverse = True
+                base_colormap = colormap[:-2]  # 移除 '_r' 後綴
+            else:
+                base_colormap = colormap
+            
+            # 獲取對應的 matplotlib colormap 名稱
+            mpl_cmap_name = matplotlib_colormap_mapping.get(base_colormap, 'viridis')
+            
+            logger.info(f"色彩映射轉換: {colormap} -> matplotlib.{mpl_cmap_name} (反轉: {reverse})")
+            
+            # 轉換 matplotlib colormap 到 Plotly 格式
+            plotly_colormap = self._matplotlib_to_plotly_colorscale(mpl_cmap_name, reverse=reverse)
+            
+            # 計算 Z 值範圍
+            z_data = raw_data.tolist()
+            flat_z = [val for row in z_data for val in row]
+            z_min = min(flat_z)
+            z_max = max(flat_z)
+            
+            logger.info(f"數據範圍: {z_min:.3f} ~ {z_max:.3f}")
+            
+            # 創建 Plotly data 配置
+            data = [{
+                'type': 'heatmap',
+                'z': z_data,
+                'x': x,
+                'y': y,
+                'colorscale': plotly_colormap,
+                'showscale': True,
+                'zmin': z_min,
+                'zmax': z_max,
+                'colorbar': {
+                    'title': {
+                        'text': f'高度 ({phys_unit})',
+                        'side': 'right'
+                    },
+                    'thickness': 20,
+                    'len': 0.8,
+                    'x': 1.02
+                },
+                'hovertemplate': (
+                    'X: %{x:.2f} ' + phys_unit + '<br>' +
+                    'Y: %{y:.2f} ' + phys_unit + '<br>' +
+                    'Z: %{z:.3f} ' + phys_unit + '<br>' +
+                    '<extra></extra>'
+                )
+            }]
+            
+            # 創建 Plotly layout 配置
+            layout = {
+                'title': '',
+                'xaxis': {
+                    'title': {'text': f'X ({phys_unit})'},
+                    'constrain': 'domain',
+                    'showgrid': True,
+                    'gridcolor': '#e5e5e5',
+                    'range': [0, x_range]
+                },
+                'yaxis': {
+                    'title': {'text': f'Y ({phys_unit})'},
+                    'scaleanchor': 'x',
+                    'scaleratio': 1,
+                    'constrain': 'domain',
+                    'showgrid': True,
+                    'gridcolor': '#e5e5e5',
+                    'range': [0, y_range]
+                },
+                'margin': {'l': 60, 'r': 80, 't': 20, 'b': 60},
+                'autosize': True,
+                'plot_bgcolor': 'white',
+                'paper_bgcolor': 'white'
+            }
+            
+            # 創建 config 配置
+            config = {
+                'responsive': True,
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToRemove': [
+                    'sendDataToCloud', 
+                    'editInChartStudio',
+                    'lasso2d',
+                    'select2d'
+                ]
+            }
+            
+            reverse_info = " (反轉)" if reverse else ""
+            logger.info(f"Plotly 配置生成完成，使用 matplotlib colormap: {mpl_cmap_name}{reverse_info}")
+            
+            return {
+                'data': data,
+                'layout': layout,
+                'config': config
+            }
+            
+        except Exception as e:
+            logger.error(f"生成 Plotly 配置時出錯: {str(e)}")
+            raise
+    
+    # 保留原有的解析方法...
     def _parse_txt_file(self, txt_file_path):
         """解析 TXT 檔案"""
         try:
