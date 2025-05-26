@@ -1,0 +1,173 @@
+
+;ANFATEC Parameterfile
+
+Version : 1.12
+Date : 5/24/2025
+Time : 11:50:41 PM
+UserName : Supervisor
+
+SetPoint         :  3.0E-0010
+SetPointPhysUnit : A
+FeedBackModus    : STM2
+Bias             :  -800.000
+BiasPhysUnit     : mV
+Ki               :   100.000
+Kp               :     0.000
+FeedbackOnCh     : 9
+
+XScanRange :    10.000
+YScanRange :    10.000
+XPhysUnit  : nm
+YPhysUnit  : nm
+Speed      :  1.500 ; lines/sec
+LineRate   :  0.750 ; lines/sec
+Angle      : -90.000
+xPixel     :    500
+yPixel     :    500
+yCenter    :    13.709
+xCenter    :     2.166
+dzdx       : dz/dx=0.000°
+dzdy       : dz/dy=0.000°
+overscan[%]:  0.000
+
+LockInFreq         :  23803.10
+LockInFreqPhysUnit : Hz
+LockInAmpl         :     0.000
+LockInAmplPhysUnit : V
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113TopoFwd.int
+Caption  : TopoFwd
+Scale    : -2.60913687478663E-0007
+PhysUnit : nm
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113TopoBwd.int
+Caption  : TopoBwd
+Scale    : -2.60913687478663E-0007
+PhysUnit : nm
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1XFwd.int
+Caption  : Lia1XFwd
+Scale    :  1.68210000000000E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1XBwd.int
+Caption  : Lia1XBwd
+Scale    :  1.68210000000000E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1YFwd.int
+Caption  : Lia1YFwd
+Scale    :  1.68210000000000E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1YBwd.int
+Caption  : Lia1YBwd
+Scale    :  1.68210000000000E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1RFwd.int
+Caption  : Lia1RFwd
+Scale    :  1.02146016199150E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1RBwd.int
+Caption  : Lia1RBwd
+Scale    :  1.02146016199150E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia2RFwd.int
+Caption  : Lia2RFwd
+Scale    :  1.02146016199150E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia2RBwd.int
+Caption  : Lia2RBwd
+Scale    :  1.02146016199150E-0017
+PhysUnit : A
+Offset   :  0.00000000000000E+0000
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113It_to_PCFwd.int
+Caption  : It_to_PCFwd
+Scale    :  8.14819335937500E-0018
+PhysUnit : A
+Offset   : -1.85719978637695E-0011
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113It_to_PCBwd.int
+Caption  : It_to_PCBwd
+Scale    :  8.14819335937500E-0018
+PhysUnit : A
+Offset   : -1.85719978637695E-0011
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113It_to_PC_Matrix.dat
+Caption  : X(U)-It_to_PC(100/100)
+HeaderCols : 3
+HeaderRows : 2
+Delays 1/Aqu/3/4/dead: 0.002/0.0069888/1.5E-5/1.5E-5/0
+Slewrate : Infinity/Infinity
+Average  :0
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1R_Matrix.dat
+Caption  : X(U)-Lia1R(100/100)
+HeaderCols : 3
+HeaderRows : 2
+Delays 1/Aqu/3/4/dead: 0.002/0.0069888/1.5E-5/1.5E-5/0
+Slewrate : Infinity/Infinity
+Average  :0
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia1Y_Matrix.dat
+Caption  : X(U)-Lia1Y(100/100)
+HeaderCols : 3
+HeaderRows : 2
+Delays 1/Aqu/3/4/dead: 0.002/0.0069888/1.5E-5/1.5E-5/0
+Slewrate : Infinity/Infinity
+Average  :0
+FileDescEnd
+
+FileDescBegin
+FileName : 20250521_Janus Stacking SiO2_13K_113Lia2R_Matrix.dat
+Caption  : X(U)-Lia2R(100/100)
+HeaderCols : 3
+HeaderRows : 2
+Delays 1/Aqu/3/4/dead: 0.002/0.0069888/1.5E-5/1.5E-5/0
+Slewrate : Infinity/Infinity
+Average  :0
+FileDescEnd
+

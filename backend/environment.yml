@@ -2,6 +2,7 @@ name: keen
 channels:
   - conda-forge
   - defaults
+  - anaconda
 dependencies:
   - python>=3.12
   - numpy>=1.24.0
