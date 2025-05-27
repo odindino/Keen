@@ -64,6 +64,10 @@ let plotlyInstance: any = null
 const currentData = computed(() => mvpStore.currentData)
 const isLoading = computed(() => mvpStore.isLoading)
 const error = computed(() => mvpStore.error)
+const isProfileMode = computed(() => mvpStore.isProfileMode)
+const profileStartPoint = computed(() => mvpStore.profileStartPoint)
+const profileCurrentPoint = computed(() => mvpStore.profileCurrentPoint)
+const profileEndPoint = computed(() => mvpStore.profileEndPoint)
 
 // 監聽數據變化
 watch(currentData, async (newData) => {
@@ -78,6 +82,21 @@ watch(() => currentData.value?.colormap, async (newColormap, oldColormap) => {
   if (newColormap && newColormap !== oldColormap && currentData.value) {
     console.log('MVP TopoViewer: 色彩映射變更為:', newColormap)
     await updateColormap(newColormap)
+  }
+})
+
+// 監聽剖面模式變化
+watch(isProfileMode, () => {
+  if (!isProfileMode.value) {
+    // 退出剖面模式時，清除剖面線並重新繪製圖表
+    updatePlotWithProfile()
+  }
+})
+
+// 監聽剖面點變化
+watch([profileStartPoint, profileCurrentPoint, profileEndPoint], () => {
+  if (isProfileMode.value) {
+    updatePlotWithProfile()
   }
 })
 
@@ -103,11 +122,130 @@ async function createPlotlyChart(plotlyConfig: any) {
     await Plotly.newPlot(plotlyContainer.value, data, layout, config)
     plotlyInstance = plotlyContainer.value
 
+    // 設置滑鼠事件處理
+    setupEventHandlers()
+
     console.log('MVP TopoViewer: Plotly 圖表創建成功')
   } catch (error) {
     console.error('MVP TopoViewer: 創建 Plotly 圖表失敗:', error)
     mvpStore.setError('創建圖表時發生錯誤: ' + error)
   }
+}
+
+// 更新圖表並添加剖面線
+function updatePlotWithProfile() {
+  if (!plotlyInstance || !currentData.value) return
+
+  const originalConfig = currentData.value.plotlyConfig
+  if (!originalConfig) return
+
+  // 複製原始數據
+  const plotData = [...originalConfig.data]
+
+  // 添加剖面線（如果在剖面模式中）
+  if (isProfileMode.value && profileStartPoint.value) {
+    const start = profileStartPoint.value
+
+    // 如果有終點，繪製固定的剖面線
+    if (profileEndPoint.value) {
+      const end = profileEndPoint.value
+      
+      plotData.push({
+        x: [start.x, end.x],
+        y: [start.y, end.y],
+        mode: 'lines+markers',
+        type: 'scatter',
+        line: {
+          color: 'white',
+          width: 3
+        },
+        marker: {
+          color: ['red', 'red'],
+          size: 8,
+          symbol: 'circle'
+        },
+        name: '高度剖面線',
+        showlegend: false,
+        hoverinfo: 'skip'
+      })
+    }
+    // 如果有當前點（滑鼠移動中）但沒有終點，繪製臨時剖面線
+    else if (profileCurrentPoint.value) {
+      const current = profileCurrentPoint.value
+      
+      plotData.push({
+        x: [start.x, current.x],
+        y: [start.y, current.y],
+        mode: 'lines+markers',
+        type: 'scatter',
+        line: {
+          color: 'white',
+          width: 2,
+          dash: 'dash'
+        },
+        marker: {
+          color: ['red', 'rgba(255,255,255,0.7)'],
+          size: [8, 6],
+          symbol: ['circle', 'circle']
+        },
+        name: '預覽剖面線',
+        showlegend: false,
+        hoverinfo: 'skip'
+      })
+    }
+  }
+
+  // 更新圖表
+  Plotly.react(plotlyInstance, plotData, originalConfig.layout, originalConfig.config)
+}
+
+// 設置滑鼠事件處理
+function setupEventHandlers() {
+  if (!plotlyInstance) return
+  
+  // 監聽左鍵點擊事件
+  plotlyInstance.on('plotly_click', (eventData: any) => {
+    if (!isProfileMode.value || !eventData.points || eventData.points.length === 0) return
+    
+    // 獲取點擊的點的數據座標
+    const point = eventData.points[0]
+    const x = point.x
+    const y = point.y
+    
+    console.log('MVP TopoViewer: 點擊座標:', { x, y })
+    
+    // 如果還沒有起點，設置起點
+    if (!profileStartPoint.value) {
+      mvpStore.setProfileStartPoint({ x, y })
+    } 
+    // 如果已有起點但沒有終點，設置終點
+    else if (!profileEndPoint.value) {
+      mvpStore.setProfileEndPoint({ x, y })
+      
+      // TODO: 這裡可以加入後端 API 呼叫來獲取剖面數據
+      console.log('MVP TopoViewer: 剖面線完成，起點:', profileStartPoint.value, '終點:', { x, y })
+    }
+    // 如果已經有終點，則清除現有數據並設置新的起點
+    else {
+      mvpStore.resetProfileData()
+      mvpStore.setProfileStartPoint({ x, y })
+    }
+  })
+  
+  // 監聽滑鼠移動事件
+  plotlyInstance.on('plotly_hover', (eventData: any) => {
+    if (!isProfileMode.value || !profileStartPoint.value || profileEndPoint.value) return
+    if (!eventData.points || eventData.points.length === 0) return
+    
+    // 獲取當前滑鼠位置的數據座標
+    const point = eventData.points[0]
+    const x = point.x
+    const y = point.y
+    
+    mvpStore.updateProfileCurrentPoint({ x, y })
+  })
+
+  console.log('MVP TopoViewer: 滑鼠事件處理器設置完成')
 }
 
 // 更新色彩映射（通過後端）

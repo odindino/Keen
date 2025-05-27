@@ -38,6 +38,48 @@
       </div>
     </section>
 
+    <!-- 分析工具區域 -->
+    <section v-if="currentData" class="flex-shrink-0">
+      <h2 class="text-lg font-semibold mb-3 text-gray-800">分析工具</h2>
+      <div class="space-y-3">
+        <!-- 高度剖面量測按鈕 -->
+        <button 
+          @click="toggleHeightProfileMode"
+          :class="[
+            'w-full py-3 px-4 font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2',
+            isProfileMode 
+              ? 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500'
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-800 focus:ring-gray-400'
+          ]"
+        >
+          <div class="flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            {{ isProfileMode ? '退出高度剖面模式' : '啟動高度剖面模式' }}
+          </div>
+        </button>
+        
+        <!-- 高度剖面模式提示 -->
+        <div v-if="isProfileMode" class="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
+          <div class="flex items-start">
+            <svg class="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+            <div>
+              <p class="font-medium mb-1">高度剖面量測模式已啟動</p>
+              <ul class="text-xs space-y-1">
+                <li>• 在圖像上左鍵點擊選擇起點</li>
+                <li>• 移動滑鼠預覽剖面線</li>
+                <li>• 再次左鍵點擊選擇終點</li>
+                <li>• 左鍵點擊其他位置重新開始</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 色彩映射選擇 - 增強版本 -->
     <section v-if="currentData" class="flex-shrink-0">
       <h2 class="text-lg font-semibold mb-3 text-gray-800">色彩映射</h2>
@@ -177,6 +219,7 @@ import { loadSPMFile } from '../../services/apiService'
 // 從 store 獲取狀態
 const currentData = computed(() => mvpStore.currentData)
 const isLoading = computed(() => mvpStore.isLoading)
+const isProfileMode = computed(() => mvpStore.isProfileMode)
 
 // 色彩映射控制狀態
 const colormapUpdating = ref(false)
@@ -209,7 +252,7 @@ async function handleLoadFile() {
     // 使用 pywebview 選擇檔案
     const result = await window.pywebview.api.select_txt_file()
     
-    if (result.success) {
+    if (result.success && result.filePath) {
       console.log('MVP: 檔案選擇成功，開始載入:', result.filePath)
       
       const data = await loadSPMFile(result.filePath)
@@ -335,5 +378,10 @@ function formatNumber(value: number): string {
   } else {
     return value.toFixed(3)
   }
+}
+
+// 切換高度剖面量測模式
+function toggleHeightProfileMode() {
+  mvpStore.toggleProfileMode()
 }
 </script>
