@@ -242,9 +242,9 @@ class SPMAnalyzerMVP:
             logger.info(f"轉換為像素座標: {pixel_start} -> {pixel_end}")
             logger.info(f"計算物理長度: {physical_length:.3f} nm")
             
-            # 使用 IntAnalysis 計算剖面，使用處理後的數據
+            # 使用 IntAnalysis 計算剖面
             profile_data = IntAnalysis.get_line_profile(
-                self.current_processed_data if self.current_processed_data is not None else self.current_raw_data, 
+                self.current_raw_data, 
                 pixel_start, 
                 pixel_end, 
                 meta['scale']  # 物理比例因子
