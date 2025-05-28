@@ -26,19 +26,19 @@
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span class="font-medium text-gray-600">最小值:</span>
-          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.min) }}</span>
+          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.min) }} nm</span>
         </div>
         <div>
           <span class="font-medium text-gray-600">最大值:</span>
-          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.max) }}</span>
+          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.max) }} nm</span>
         </div>
         <div>
           <span class="font-medium text-gray-600">平均值:</span>
-          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.mean) }}</span>
+          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.mean) }} nm</span>
         </div>
         <div>
           <span class="font-medium text-gray-600">範圍:</span>
-          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.range) }}</span>
+          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.range) }} nm</span>
         </div>
       </div>
     </div>
@@ -70,23 +70,25 @@ async function createProfileChart(data: any) {
       plotlyInstance = null
     }
 
+    // 根據是否為預覽數據調整視覺樣式
+    const isPreview = data.isPreview || false
+
+    console.log('ProfileChart: 距離數據:', data.distance)
+    console.log('ProfileChart: 高度數據:', data.height)
+
     const plotData = [{
-      x: data.distance,
+      x: data.distance,  // 直接使用原始距離數據
       y: data.height,
       type: 'scatter',
-      mode: 'lines+markers',
+      mode: 'lines',  // 移除 markers，只保留線條
       line: { 
-        color: '#3B82F6', 
+        color: '#3B82F6',  // 統一使用藍色
         width: 2.5,
         shape: 'spline',
-        smoothing: 1.3
+        smoothing: 1.3,
+        dash: 'solid'  // 統一使用實線
       },
-      marker: {
-        color: '#3B82F6',
-        size: 4,
-        opacity: 0.7
-      },
-      name: '高度剖面',
+      name: isPreview ? '預覽剖面' : '高度剖面',
       hoverinfo: 'x+y',
       hoverlabel: {
         bgcolor: '#F8FAFC',
@@ -95,30 +97,22 @@ async function createProfileChart(data: any) {
       }
     }]
 
-    const physUnit = currentData.value?.physUnit || 'nm'
-
     const layout = {
       title: {
-        text: '高度剖面',
+        text: isPreview ? '高度剖面 (預覽)' : '高度剖面',
         font: { size: 16 }
       },
       xaxis: { 
-        title: `距離 (${physUnit})`,
-        showgrid: true,
-        gridcolor: '#f0f0f0'
-      },
-      yaxis: { 
-        title: `高度 (${physUnit})`,
+        title: '距離 (nm)',
         showgrid: true,
         gridcolor: '#f0f0f0',
-        // 增強垂直方向的視覺效果
-        autorange: true,
-        // 確保有足夠的上下邊界，讓曲線數據更明顯
-        rangemode: 'normal',
-        // 顯示更多的刻度，增強細節
-        nticks: 12,
-        // 確保 y 軸比例不會使微小變化看不見
-        automargin: true
+        autorange: true
+      },
+      yaxis: { 
+        title: '高度 (nm)',
+        showgrid: true,
+        gridcolor: '#f0f0f0',
+        autorange: true
       },
       margin: { l: 65, r: 25, t: 50, b: 65 },
       showlegend: false,

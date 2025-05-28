@@ -60,6 +60,9 @@ import mvpStore from '../../stores/mvpStore'
 const plotlyContainer = ref<HTMLElement | null>(null)
 let plotlyInstance: any = null
 
+// 即時剖面更新的節流控制
+let hoverUpdateTimeout: number | null = null
+
 // 從 store 獲取狀態
 const currentData = computed(() => mvpStore.currentData)
 const isLoading = computed(() => mvpStore.isLoading)
@@ -233,7 +236,9 @@ function setupEventHandlers() {
         )
         
         if (result.success) {
-          mvpStore.setProfileData(result.profile_data)
+          // 最終確認的剖面，清除預覽標記
+          const finalData = { ...result.profile_data, isPreview: false }
+          mvpStore.setProfileData(finalData)
           console.log('MVP TopoViewer: 剖面計算成功:', result.profile_data)
         } else {
           console.error('MVP TopoViewer: 剖面計算失敗:', result.error)
@@ -251,8 +256,8 @@ function setupEventHandlers() {
     }
   })
   
-  // 監聽滑鼠移動事件
-  plotlyInstance.on('plotly_hover', (eventData: any) => {
+  // 監聽滑鼠移動事件 - 增加即時剖面計算
+  plotlyInstance.on('plotly_hover', async (eventData: any) => {
     if (!isProfileMode.value || !profileStartPoint.value || profileEndPoint.value) return
     if (!eventData.points || eventData.points.length === 0) return
     
@@ -262,6 +267,30 @@ function setupEventHandlers() {
     const y = point.y
     
     mvpStore.updateProfileCurrentPoint({ x, y })
+    
+    // 使用節流機制避免過於頻繁的 API 調用
+    if (hoverUpdateTimeout) {
+      clearTimeout(hoverUpdateTimeout)
+    }
+    
+    hoverUpdateTimeout = setTimeout(async () => {
+      try {
+        console.log('MVP TopoViewer: 即時計算剖面數據...')
+        const api = window.pywebview.api as any;
+        const result = await api.calculate_height_profile(
+          [profileStartPoint.value!.x, profileStartPoint.value!.y],
+          [x, y]
+        )
+        
+        if (result.success) {
+          // 標記為預覽數據
+          const previewData = { ...result.profile_data, isPreview: true }
+          mvpStore.setProfileData(previewData)
+        }
+      } catch (error) {
+        console.warn('即時剖面計算失敗:', error)
+      }
+    }, 150) // 150ms 節流
   })
 
   console.log('MVP TopoViewer: 滑鼠事件處理器設置完成')
@@ -296,6 +325,12 @@ async function updateColormap(newColormap: string) {
 
 // 組件卸載時清理
 onBeforeUnmount(() => {
+  // 清理節流計時器
+  if (hoverUpdateTimeout) {
+    clearTimeout(hoverUpdateTimeout)
+    hoverUpdateTimeout = null
+  }
+  
   if (plotlyInstance) {
     console.log('MVP TopoViewer: 清理 Plotly 實例')
     Plotly.purge(plotlyInstance)

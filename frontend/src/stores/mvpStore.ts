@@ -34,6 +34,7 @@ export interface ProfileData {
   height: number[]
   startPoint: ProfilePoint
   endPoint: ProfilePoint
+  isPreview?: boolean  // 新增：標記是否為預覽數據
   stats?: {
     min: number
     max: number
