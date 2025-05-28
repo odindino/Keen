@@ -26,9 +26,17 @@
         </div>
       </aside>
 
-      <!-- 右側圖像顯示區 -->
-      <section class="flex-1 p-4 min-w-0">
-        <TopoViewer />
+      <!-- 右側顯示區域 - 修改為左右布局 -->
+      <section class="flex-1 flex min-w-0">
+        <!-- 主圖像顯示區 - 佔左側 -->
+        <div class="flex-1 p-4 min-w-0">
+          <TopoViewer />
+        </div>
+        
+        <!-- 剖面圖表區域 - 佔右側，只在剖面模式時顯示 -->
+        <div v-if="isProfileMode" class="w-2/5 p-4 border-l">
+          <ProfileChart />
+        </div>
       </section>
     </main>
 
@@ -75,12 +83,14 @@
 import { computed } from 'vue'
 import ControlPanel from './components/mvp/ControlPanel.vue'
 import TopoViewer from './components/mvp/TopoViewer.vue'
+import ProfileChart from './components/mvp/ProfileChart.vue'
 import mvpStore from './stores/mvpStore'
 
 // 從 store 獲取狀態
 const currentData = computed(() => mvpStore.currentData)
 const isLoading = computed(() => mvpStore.isLoading)
 const error = computed(() => mvpStore.error)
+const isProfileMode = computed(() => mvpStore.isProfileMode)
 
 // 清除錯誤
 function clearError() {

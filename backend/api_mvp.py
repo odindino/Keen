@@ -20,6 +20,8 @@ class SPMAnalyzerMVP:
     
     def __init__(self):
         self.current_directory = ""
+        self.current_raw_data = None  # 新增：存儲原始 numpy 數據
+        self.current_metadata = None  # 新增：存儲元數據
         logger.info("SPM 分析器 MVP 初始化完成")
     
     def select_txt_file(self):
@@ -92,6 +94,17 @@ class SPMAnalyzerMVP:
             logger.info("解析 INT 檔案數據")
             raw_data = self._parse_int_file(int_file_path, scale, x_pixels, y_pixels)
             
+            # 存儲原始數據和元數據供後續使用
+            self.current_raw_data = raw_data
+            self.current_metadata = {
+                'scale': scale,
+                'phys_unit': phys_unit,
+                'x_pixels': x_pixels,
+                'y_pixels': y_pixels,
+                'x_range': x_range,
+                'y_range': y_range
+            }
+            
             # 6. 計算統計資訊
             logger.info("計算統計資訊")
             statistics = self._calculate_statistics(raw_data)
@@ -160,6 +173,70 @@ class SPMAnalyzerMVP:
             logger.error(f"更新色彩映射時出錯: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    def calculate_height_profile(self, start_point, end_point):
+        """
+        計算高度剖面數據
+        
+        Args:
+            start_point: 起始點座標 [x, y] (物理單位)
+            end_point: 終止點座標 [x, y] (物理單位)
+            
+        Returns:
+            dict: 剖面數據
+        """
+        try:
+            if self.current_raw_data is None or self.current_metadata is None:
+                return {"success": False, "error": "沒有載入的數據"}
+            
+            logger.info(f"開始計算高度剖面: {start_point} -> {end_point}")
+            
+            # 將物理座標轉換為像素座標
+            meta = self.current_metadata
+            pixel_start = [
+                int(start_point[1] * meta['y_pixels'] / meta['y_range']),  # y -> row
+                int(start_point[0] * meta['x_pixels'] / meta['x_range'])   # x -> col
+            ]
+            pixel_end = [
+                int(end_point[1] * meta['y_pixels'] / meta['y_range']),
+                int(end_point[0] * meta['x_pixels'] / meta['x_range'])
+            ]
+            
+            logger.info(f"轉換為像素座標: {pixel_start} -> {pixel_end}")
+            
+            # 使用 IntAnalysis 計算剖面
+            from core.analysis.int_analysis import IntAnalysis
+            profile_data = IntAnalysis.get_line_profile(
+                self.current_raw_data, 
+                pixel_start, 
+                pixel_end, 
+                meta['scale']  # 物理比例因子
+            )
+            
+            # 計算統計資訊
+            height_values = profile_data['height']
+            stats = {
+                'min': float(np.min(height_values)),
+                'max': float(np.max(height_values)),
+                'mean': float(np.mean(height_values)),
+                'range': float(np.max(height_values) - np.min(height_values))
+            }
+            
+            # 添加統計資訊到剖面資料
+            profile_data['stats'] = stats
+            
+            logger.info(f"剖面計算成功，點數: {len(profile_data['distance'])}")
+            
+            return {
+                "success": True,
+                "profile_data": profile_data
+            }
+            
+        except Exception as e:
+            logger.error(f"計算高度剖面失敗: {str(e)}")
+            import traceback
+            logger.error(f"詳細錯誤: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
+
     def _matplotlib_to_plotly_colorscale(self, cmap_name, reverse=False, n_colors=256):
         """將 matplotlib colormap 轉換為 Plotly colorscale 格式"""
         try:

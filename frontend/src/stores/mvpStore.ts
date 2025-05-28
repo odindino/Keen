@@ -34,6 +34,12 @@ export interface ProfileData {
   height: number[]
   startPoint: ProfilePoint
   endPoint: ProfilePoint
+  stats?: {
+    min: number
+    max: number
+    mean: number
+    range: number
+  }
 }
 
 // 簡化的響應式狀態管理

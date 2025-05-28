@@ -204,7 +204,7 @@ function setupEventHandlers() {
   if (!plotlyInstance) return
   
   // 監聽左鍵點擊事件
-  plotlyInstance.on('plotly_click', (eventData: any) => {
+  plotlyInstance.on('plotly_click', async (eventData: any) => {
     if (!isProfileMode.value || !eventData.points || eventData.points.length === 0) return
     
     // 獲取點擊的點的數據座標
@@ -218,12 +218,31 @@ function setupEventHandlers() {
     if (!profileStartPoint.value) {
       mvpStore.setProfileStartPoint({ x, y })
     } 
-    // 如果已有起點但沒有終點，設置終點
+    // 如果已有起點但沒有終點，設置終點並計算剖面
     else if (!profileEndPoint.value) {
       mvpStore.setProfileEndPoint({ x, y })
       
-      // TODO: 這裡可以加入後端 API 呼叫來獲取剖面數據
-      console.log('MVP TopoViewer: 剖面線完成，起點:', profileStartPoint.value, '終點:', { x, y })
+      // 調用後端 API 計算剖面數據
+      try {
+        console.log('MVP TopoViewer: 開始計算剖面數據...')
+        // 使用類型斷言來解決 TypeScript 錯誤
+        const api = window.pywebview.api as any;
+        const result = await api.calculate_height_profile(
+          [profileStartPoint.value.x, profileStartPoint.value.y],
+          [x, y]
+        )
+        
+        if (result.success) {
+          mvpStore.setProfileData(result.profile_data)
+          console.log('MVP TopoViewer: 剖面計算成功:', result.profile_data)
+        } else {
+          console.error('MVP TopoViewer: 剖面計算失敗:', result.error)
+          mvpStore.setError('剖面計算失敗: ' + result.error)
+        }
+      } catch (error) {
+        console.error('MVP TopoViewer: 調用剖面 API 失敗:', error)
+        mvpStore.setError('調用剖面 API 失敗')
+      }
     }
     // 如果已經有終點，則清除現有數據並設置新的起點
     else {
