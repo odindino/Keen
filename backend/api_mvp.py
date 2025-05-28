@@ -201,7 +201,14 @@ class SPMAnalyzerMVP:
                 int(end_point[0] * meta['x_pixels'] / meta['x_range'])
             ]
             
+            # 計算物理單位的實際長度（歐式距離）
+            physical_length = np.sqrt(
+                (end_point[0] - start_point[0]) ** 2 + 
+                (end_point[1] - start_point[1]) ** 2
+            )
+            
             logger.info(f"轉換為像素座標: {pixel_start} -> {pixel_end}")
+            logger.info(f"計算物理長度: {physical_length:.3f} nm")
             
             # 使用 IntAnalysis 計算剖面
             from core.analysis.int_analysis import IntAnalysis
@@ -212,17 +219,15 @@ class SPMAnalyzerMVP:
                 meta['scale']  # 物理比例因子
             )
             
-            # 計算統計資訊
-            height_values = profile_data['height']
-            stats = {
-                'min': float(np.min(height_values)),
-                'max': float(np.max(height_values)),
-                'mean': float(np.mean(height_values)),
-                'range': float(np.max(height_values) - np.min(height_values))
-            }
+            # 覆蓋計算得到的長度，使用正確的物理長度
+            profile_data['length'] = float(physical_length)
             
-            # 添加統計資訊到剖面資料
-            profile_data['stats'] = stats
+            # 重新計算正確的距離數組
+            num_points = len(profile_data['distance'])
+            correct_distances = np.linspace(0, physical_length, num_points)
+            profile_data['distance'] = correct_distances.tolist()
+            
+            # profile_data 已經包含完整的統計資訊，不需要重新計算
             
             logger.info(f"剖面計算成功，點數: {len(profile_data['distance'])}")
             

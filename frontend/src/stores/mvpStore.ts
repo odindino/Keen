@@ -32,6 +32,7 @@ export interface ProfilePoint {
 export interface ProfileData {
   distance: number[]
   height: number[]
+  length: number  // 新增：剖面總長度
   startPoint: ProfilePoint
   endPoint: ProfilePoint
   isPreview?: boolean  // 新增：標記是否為預覽數據
@@ -39,7 +40,10 @@ export interface ProfileData {
     min: number
     max: number
     mean: number
+    median: number
+    std: number  // 新增：標準差
     range: number
+    rms: number  // 新增：均方根
   }
 }
 

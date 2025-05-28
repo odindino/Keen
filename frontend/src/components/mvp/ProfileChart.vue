@@ -23,7 +23,11 @@
     
     <!-- 統計資訊 -->
     <div v-if="profileData && profileData.stats" class="flex-shrink-0 p-3 border-t bg-gray-50">
-      <div class="grid grid-cols-2 gap-4 text-sm">
+      <div class="grid grid-cols-3 gap-4 text-sm">
+        <div>
+          <span class="font-medium text-gray-600">總長度:</span>
+          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.length) }} nm</span>
+        </div>
         <div>
           <span class="font-medium text-gray-600">最小值:</span>
           <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.min) }} nm</span>
@@ -39,6 +43,10 @@
         <div>
           <span class="font-medium text-gray-600">範圍:</span>
           <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.range) }} nm</span>
+        </div>
+        <div>
+          <span class="font-medium text-gray-600">標準差:</span>
+          <span class="ml-1 text-gray-900 font-mono">{{ formatNumber(profileData.stats.std) }} nm</span>
         </div>
       </div>
     </div>
@@ -75,6 +83,7 @@ async function createProfileChart(data: any) {
 
     console.log('ProfileChart: 距離數據:', data.distance)
     console.log('ProfileChart: 高度數據:', data.height)
+    console.log('ProfileChart: 剖面總長度:', data.length, 'nm')
 
     const plotData = [{
       x: data.distance,  // 直接使用原始距離數據
@@ -99,14 +108,15 @@ async function createProfileChart(data: any) {
 
     const layout = {
       title: {
-        text: isPreview ? '高度剖面 (預覽)' : '高度剖面',
+        text: isPreview ? '高度剖面 (預覽)' : `高度剖面 (總長度: ${formatNumber(data.length)} nm)`,
         font: { size: 16 }
       },
       xaxis: { 
         title: '距離 (nm)',
         showgrid: true,
         gridcolor: '#f0f0f0',
-        autorange: true
+        autorange: false,  // 改為固定範圍
+        range: [0, data.length] // 確保顯示從0到總長度
       },
       yaxis: { 
         title: '高度 (nm)',

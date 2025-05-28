@@ -236,8 +236,13 @@ function setupEventHandlers() {
         )
         
         if (result.success) {
-          // 最終確認的剖面，清除預覽標記
-          const finalData = { ...result.profile_data, isPreview: false }
+          // 最終確認的剖面，清除預覽標記，並添加起點終點資訊
+          const finalData = { 
+            ...result.profile_data, 
+            isPreview: false,
+            startPoint: profileStartPoint.value,
+            endPoint: { x, y }
+          }
           mvpStore.setProfileData(finalData)
           console.log('MVP TopoViewer: 剖面計算成功:', result.profile_data)
         } else {
@@ -283,8 +288,13 @@ function setupEventHandlers() {
         )
         
         if (result.success) {
-          // 標記為預覽數據
-          const previewData = { ...result.profile_data, isPreview: true }
+          // 標記為預覽數據，並添加起點終點資訊
+          const previewData = { 
+            ...result.profile_data, 
+            isPreview: true,
+            startPoint: profileStartPoint.value,
+            endPoint: { x, y }
+          }
           mvpStore.setProfileData(previewData)
         }
       } catch (error) {
