@@ -80,6 +80,122 @@
       </div>
     </section>
 
+    <!-- 影像處理區域 -->
+    <section v-if="currentData" class="flex-shrink-0">
+      <h2 class="text-lg font-semibold mb-3 text-gray-800">影像處理</h2>
+      <div class="space-y-4">
+        <!-- 平面化控制 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">平面化方法</label>
+          <div class="space-y-2">
+            <button 
+              @click="applyFlatten('linewise_mean')"
+              :disabled="imageProcessing"
+              class="w-full py-2 px-3 bg-blue-100 hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400 text-blue-800 text-sm font-medium rounded-md transition-colors"
+            >
+              線性平面化 (均值)
+            </button>
+            <button 
+              @click="applyFlatten('linewise_poly')"
+              :disabled="imageProcessing"
+              class="w-full py-2 px-3 bg-blue-100 hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400 text-blue-800 text-sm font-medium rounded-md transition-colors"
+            >
+              線性平面化 (多項式)
+            </button>
+            <button 
+              @click="applyFlatten('plane')"
+              :disabled="imageProcessing"
+              class="w-full py-2 px-3 bg-blue-100 hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400 text-blue-800 text-sm font-medium rounded-md transition-colors"
+            >
+              全域平面擬合
+            </button>
+          </div>
+        </div>
+
+        <!-- 傾斜調整控制 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">傾斜調整</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button 
+              @click="adjustTilt('up')"
+              :disabled="imageProcessing"
+              class="py-2 px-3 bg-purple-100 hover:bg-purple-200 disabled:bg-gray-100 disabled:text-gray-400 text-purple-800 text-sm font-medium rounded-md transition-colors flex items-center justify-center"
+            >
+              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+              </svg>
+              上
+            </button>
+            <button 
+              @click="adjustTilt('down')"
+              :disabled="imageProcessing"
+              class="py-2 px-3 bg-purple-100 hover:bg-purple-200 disabled:bg-gray-100 disabled:text-gray-400 text-purple-800 text-sm font-medium rounded-md transition-colors flex items-center justify-center"
+            >
+              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+              下
+            </button>
+            <button 
+              @click="adjustTilt('left')"
+              :disabled="imageProcessing"
+              class="py-2 px-3 bg-purple-100 hover:bg-purple-200 disabled:bg-gray-100 disabled:text-gray-400 text-purple-800 text-sm font-medium rounded-md transition-colors flex items-center justify-center"
+            >
+              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+              左
+            </button>
+            <button 
+              @click="adjustTilt('right')"
+              :disabled="imageProcessing"
+              class="py-2 px-3 bg-purple-100 hover:bg-purple-200 disabled:bg-gray-100 disabled:text-gray-400 text-purple-800 text-sm font-medium rounded-md transition-colors flex items-center justify-center"
+            >
+              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+              </svg>
+              右
+            </button>
+          </div>
+          
+          <!-- 微調模式切換 -->
+          <div class="mt-2">
+            <label class="flex items-center">
+              <input 
+                type="checkbox" 
+                v-model="fineTuneMode" 
+                class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+              >
+              <span class="ml-2 text-sm text-gray-700">微調模式</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 重置按鈕 -->
+        <div>
+          <button 
+            @click="resetImageProcessing"
+            :disabled="imageProcessing"
+            class="w-full py-2 px-3 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 disabled:text-gray-400 text-red-800 text-sm font-medium rounded-md transition-colors flex items-center justify-center"
+          >
+            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+            </svg>
+            重置為原始影像
+          </button>
+        </div>
+
+        <!-- 處理狀態指示 -->
+        <div v-if="imageProcessing" class="text-sm text-blue-600 flex items-center bg-blue-50 p-3 rounded-lg">
+          <svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          正在處理影像...
+        </div>
+      </div>
+    </section>
+
     <!-- 色彩映射選擇 - 增強版本 -->
     <section v-if="currentData" class="flex-shrink-0">
       <h2 class="text-lg font-semibold mb-3 text-gray-800">色彩映射</h2>
@@ -225,6 +341,10 @@ const isProfileMode = computed(() => mvpStore.isProfileMode)
 const colormapUpdating = ref(false)
 const selectedColormap = ref('Oranges')
 const isReversed = ref(false)
+
+// 影像處理控制狀態
+const imageProcessing = ref(false)
+const fineTuneMode = ref(false)
 
 // 監聽當前數據變化，同步 UI 狀態
 watch(currentData, (newData) => {
@@ -383,5 +503,101 @@ function formatNumber(value: number): string {
 // 切換高度剖面量測模式
 function toggleHeightProfileMode() {
   mvpStore.toggleProfileMode()
+}
+
+// 應用影像平面化
+async function applyFlatten(method: 'linewise_mean' | 'linewise_poly' | 'plane') {
+  if (!currentData.value) return
+  
+  try {
+    imageProcessing.value = true
+    console.log('MVP: 開始應用影像平面化，方法:', method)
+    
+    // 調用後端 API 進行影像平面化
+    const result = await window.pywebview.api.apply_flatten(method)
+    
+    if (result.success) {
+      // 更新處理後的數據，保持原有結構但替換關鍵部分
+      const updatedData = {
+        ...currentData.value,
+        plotlyConfig: result.plotlyConfig,
+        statistics: result.statistics
+      }
+      mvpStore.setCurrentData(updatedData)
+      console.log('MVP: 影像平面化應用成功')
+    } else {
+      throw new Error(result.error || '應用影像平面化失敗')
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : '應用影像平面化時發生錯誤'
+    mvpStore.setError(errorMessage)
+    console.error('MVP: 應用影像平面化失敗:', err)
+  } finally {
+    imageProcessing.value = false
+  }
+}
+
+// 調整影像傾斜
+async function adjustTilt(direction: 'up' | 'down' | 'left' | 'right') {
+  if (!currentData.value) return
+  
+  try {
+    imageProcessing.value = true
+    console.log('MVP: 開始調整影像傾斜，方向:', direction)
+    
+    // 調用後端 API 調整影像傾斜
+    const result = await window.pywebview.api.adjust_tilt(direction, fineTuneMode.value)
+    
+    if (result.success) {
+      // 更新處理後的數據，保持原有結構但替換關鍵部分
+      const updatedData = {
+        ...currentData.value,
+        plotlyConfig: result.plotlyConfig,
+        statistics: result.statistics
+      }
+      mvpStore.setCurrentData(updatedData)
+      console.log('MVP: 影像傾斜調整成功')
+    } else {
+      throw new Error(result.error || '調整影像傾斜失敗')
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : '調整影像傾斜時發生錯誤'
+    mvpStore.setError(errorMessage)
+    console.error('MVP: 調整影像傾斜失敗:', err)
+  } finally {
+    imageProcessing.value = false
+  }
+}
+
+// 重置影像處理
+async function resetImageProcessing() {
+  if (!currentData.value) return
+  
+  try {
+    imageProcessing.value = true
+    console.log('MVP: 開始重置影像處理')
+    
+    // 調用後端 API 重置影像處理
+    const result = await window.pywebview.api.reset_image_processing()
+    
+    if (result.success) {
+      // 更新為原始影像數據，保持原有結構但替換關鍵部分
+      const updatedData = {
+        ...currentData.value,
+        plotlyConfig: result.plotlyConfig,
+        statistics: result.statistics
+      }
+      mvpStore.setCurrentData(updatedData)
+      console.log('MVP: 影像處理重置成功')
+    } else {
+      throw new Error(result.error || '重置影像處理失敗')
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : '重置影像處理時發生錯誤'
+    mvpStore.setError(errorMessage)
+    console.error('MVP: 重置影像處理失敗:', err)
+  } finally {
+    imageProcessing.value = false
+  }
 }
 </script>

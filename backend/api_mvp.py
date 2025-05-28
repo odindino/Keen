@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import to_hex
 
+# 導入影像分析功能
+from core.analysis.int_analysis import IntAnalysis
+
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +25,8 @@ class SPMAnalyzerMVP:
         self.current_directory = ""
         self.current_raw_data = None  # 新增：存儲原始 numpy 數據
         self.current_metadata = None  # 新增：存儲元數據
+        self.current_processed_data = None  # 新增：存儲處理後的數據
+        self.processing_history = []  # 新增：處理歷史記錄
         logger.info("SPM 分析器 MVP 初始化完成")
     
     def select_txt_file(self):
@@ -96,6 +101,8 @@ class SPMAnalyzerMVP:
             
             # 存儲原始數據和元數據供後續使用
             self.current_raw_data = raw_data
+            self.current_processed_data = raw_data.copy()  # 初始化處理後數據為原始數據副本
+            self.processing_history = []  # 重置處理歷史
             self.current_metadata = {
                 'scale': scale,
                 'phys_unit': phys_unit,
@@ -150,17 +157,42 @@ class SPMAnalyzerMVP:
         try:
             logger.info(f"更新色彩映射為: {colormap}")
             
-            # 重新解析數據
-            parameters = self._parse_txt_file(txt_file_path)
-            scale, phys_unit, x_pixels, y_pixels, x_range, y_range = self._extract_parameters(
-                parameters, int_file_path
-            )
-            raw_data = self._parse_int_file(int_file_path, scale, x_pixels, y_pixels)
+            # 使用當前處理後的數據（如果可用），否則使用原始數據
+            if self.current_processed_data is not None:
+                data_to_use = self.current_processed_data
+                logger.info("使用處理後的數據重新生成 Plotly 配置")
+            elif self.current_raw_data is not None:
+                data_to_use = self.current_raw_data
+                logger.info("使用原始數據重新生成 Plotly 配置")
+            else:
+                # 如果沒有緩存數據，重新解析
+                logger.info("重新解析數據")
+                parameters = self._parse_txt_file(txt_file_path)
+                scale, phys_unit, x_pixels, y_pixels, x_range, y_range = self._extract_parameters(
+                    parameters, int_file_path
+                )
+                data_to_use = self._parse_int_file(int_file_path, scale, x_pixels, y_pixels)
+                
+                # 更新緩存數據
+                self.current_raw_data = data_to_use
+                self.current_processed_data = data_to_use.copy()
+                self.current_metadata = {
+                    'scale': scale,
+                    'phys_unit': phys_unit,
+                    'x_pixels': x_pixels,
+                    'y_pixels': y_pixels,
+                    'x_range': x_range,
+                    'y_range': y_range
+                }
             
             # 使用新的色彩映射生成 Plotly 配置
             logger.info(f"重新生成 Plotly 配置，使用色彩映射: {colormap}")
             plotly_config = self._generate_plotly_config(
-                raw_data, x_range, y_range, phys_unit, colormap
+                data_to_use, 
+                self.current_metadata['x_range'], 
+                self.current_metadata['y_range'], 
+                self.current_metadata['phys_unit'], 
+                colormap
             )
             
             return {
@@ -210,10 +242,9 @@ class SPMAnalyzerMVP:
             logger.info(f"轉換為像素座標: {pixel_start} -> {pixel_end}")
             logger.info(f"計算物理長度: {physical_length:.3f} nm")
             
-            # 使用 IntAnalysis 計算剖面
-            from core.analysis.int_analysis import IntAnalysis
+            # 使用 IntAnalysis 計算剖面，使用處理後的數據
             profile_data = IntAnalysis.get_line_profile(
-                self.current_raw_data, 
+                self.current_processed_data if self.current_processed_data is not None else self.current_raw_data, 
                 pixel_start, 
                 pixel_end, 
                 meta['scale']  # 物理比例因子
@@ -645,3 +676,138 @@ class SPMAnalyzerMVP:
         except Exception as e:
             logger.error(f"計算統計資訊時出錯: {str(e)}")
             return {"min": 0.0, "max": 0.0, "mean": 0.0, "rms": 0.0}
+    
+    def apply_flatten(self, method="plane"):
+        """應用平面化處理
+        
+        Args:
+            method: 平面化方法 ('linewise_mean', 'linewise_poly', 'plane')
+        """
+        try:
+            if self.current_raw_data is None:
+                return {"success": False, "error": "沒有載入的影像數據"}
+            
+            logger.info(f"開始應用平面化處理，方法: {method}")
+            
+            # 使用 IntAnalysis 的平面化功能
+            if method == "linewise_mean":
+                processed_data = IntAnalysis.linewise_flatten_mean(self.current_processed_data)
+            elif method == "linewise_poly":
+                processed_data = IntAnalysis.linewise_flatten_polyfit(self.current_processed_data)
+            elif method == "plane":
+                processed_data = IntAnalysis.plane_flatten(self.current_processed_data)
+            else:
+                return {"success": False, "error": f"未知的平面化方法: {method}"}
+            
+            # 更新處理後的數據
+            self.current_processed_data = processed_data
+            self.processing_history.append(f"flatten_{method}")
+            
+            # 重新計算統計資訊
+            statistics = self._calculate_statistics(processed_data)
+            
+            # 生成新的 Plotly 配置
+            plotly_config = self._generate_plotly_config(
+                processed_data, 
+                self.current_metadata['x_range'], 
+                self.current_metadata['y_range'], 
+                self.current_metadata['phys_unit'], 
+                "Oranges"
+            )
+            
+            logger.info("影像平面化完成")
+            
+            return {
+                "success": True,
+                "statistics": statistics,
+                "plotlyConfig": plotly_config
+            }
+        
+        except Exception as e:
+            logger.error(f"平面化影像時出錯: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def adjust_tilt(self, direction, fine_tune=False):
+        """調整影像傾斜
+        
+        Args:
+            direction: 傾斜方向 ('up', 'down', 'left', 'right')
+            fine_tune: 是否為微調模式
+        """
+        try:
+            if self.current_raw_data is None:
+                return {"success": False, "error": "沒有載入的影像數據"}
+            
+            logger.info(f"開始調整影像傾斜，方向: {direction}, 微調: {fine_tune}")
+            
+            # 使用 IntAnalysis 的傾斜調整功能
+            adjusted_data = IntAnalysis.tilt_image(
+                self.current_processed_data, 
+                direction, 
+                step_size=5 if fine_tune else 10, 
+                fine_tune=fine_tune
+            )
+            
+            # 更新處理後的數據
+            self.current_processed_data = adjusted_data
+            self.processing_history.append(f"tilt_{direction}{'_fine' if fine_tune else ''}")
+            
+            # 重新計算統計資訊
+            statistics = self._calculate_statistics(adjusted_data)
+            
+            # 生成新的 Plotly 配置
+            plotly_config = self._generate_plotly_config(
+                adjusted_data, 
+                self.current_metadata['x_range'], 
+                self.current_metadata['y_range'], 
+                self.current_metadata['phys_unit'], 
+                "Oranges"
+            )
+            
+            logger.info("影像傾斜調整完成")
+            
+            return {
+                "success": True,
+                "statistics": statistics,
+                "plotlyConfig": plotly_config
+            }
+        
+        except Exception as e:
+            logger.error(f"調整影像傾斜時出錯: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def reset_image_processing(self):
+        """重置影像處理為原始狀態"""
+        try:
+            if self.current_raw_data is None:
+                return {"success": False, "error": "沒有載入的影像數據"}
+            
+            logger.info("開始重置影像為原始狀態")
+            
+            # 重置處理後的數據為原始數據副本
+            self.current_processed_data = self.current_raw_data.copy()
+            self.processing_history = []
+            
+            # 重新計算統計資訊
+            statistics = self._calculate_statistics(self.current_processed_data)
+            
+            # 生成新的 Plotly 配置
+            plotly_config = self._generate_plotly_config(
+                self.current_processed_data, 
+                self.current_metadata['x_range'], 
+                self.current_metadata['y_range'], 
+                self.current_metadata['phys_unit'], 
+                "Oranges"
+            )
+            
+            logger.info("影像重置完成")
+            
+            return {
+                "success": True,
+                "statistics": statistics,
+                "plotlyConfig": plotly_config
+            }
+        
+        except Exception as e:
+            logger.error(f"重置影像時出錯: {str(e)}")
+            return {"success": False, "error": str(e)}
