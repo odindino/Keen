@@ -81,9 +81,19 @@ const isLoading = ref(false)
 
 // Computed properties
 const showSlider = computed(() => {
-  const shouldShow = mvpStore.isCitsMode && 
+  // 增加更穩定的顯示條件，在加載過程中也保持顯示
+  const shouldShow = (mvpStore.isCitsMode || isLoading.value) && 
          mvpStore.citsData && 
          mvpStore.citsData.biasCount > 1
+  
+  // 調試信息
+  console.log('CITS Slider showSlider check:', {
+    isCitsMode: mvpStore.isCitsMode,
+    isLoading: isLoading.value,
+    hasCitsData: !!mvpStore.citsData,
+    biasCount: mvpStore.citsData?.biasCount,
+    shouldShow
+  })
   
   return shouldShow
 })
@@ -183,7 +193,7 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-// 添加鍵盤事件監聽 
+// 挂载时添加键盘监听
 import { onMounted, onUnmounted } from 'vue'
 
 onMounted(() => {
@@ -358,7 +368,7 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-/* 響應式設計 */
+/* 响应式设计 */
 @media (max-width: 768px) {
   .cits-bias-slider {
     padding: 12px;

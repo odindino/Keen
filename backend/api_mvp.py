@@ -1201,32 +1201,10 @@ class SPMAnalyzerMVP:
             
             logger.info(f"CITS 偏壓切換成功: {current_bias:.3f} V")
             
-            # 構建完整的 CITS 數據響應
-            cits_data = {
-                "bias_values": [float(b) for b in self.current_cits_data['bias_values']],
-                "current_bias_index": bias_index,
-                "current_bias": float(current_bias),
-                "bias_count": len(self.current_cits_data['bias_values']),
-                "min_bias": float(min(self.current_cits_data['bias_values'])),
-                "max_bias": float(max(self.current_cits_data['bias_values'])),
-                "measurement_type": "CITS",
-                "grid_size": self.current_cits_metadata.get('grid_size', [])
-            }
-            
             return {
                 "success": True,
-                "name": f"CITS @ {current_bias:.3f}V",
                 "plotlyConfig": plotly_config,
                 "statistics": statistics,
-                "colormap": "RdBu_r",
-                "dimensions": {
-                    "width": self.current_cits_metadata.get('grid_size', [256, 256])[0],
-                    "height": self.current_cits_metadata.get('grid_size', [256, 256])[1],
-                    "xRange": float(self.current_cits_metadata['x_range']),
-                    "yRange": float(self.current_cits_metadata['y_range'])
-                },
-                "physUnit": "A",
-                "cits_data": cits_data,
                 "current_bias": float(current_bias),
                 "bias_index": bias_index
             }
