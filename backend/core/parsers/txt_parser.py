@@ -10,7 +10,8 @@ class TxtParser:
     def __init__(self, file_path):
         self.file_path = file_path
         self.metadata = {}
-        self.file_descriptions = []
+        self.int_files = []
+        self.dat_files = []
     
     def parse(self):
         """解析 .txt 檔案以提取元數據和檔案描述"""
@@ -24,10 +25,11 @@ class TxtParser:
             # 解析檔案描述
             self._parse_file_descriptions(content)
             
-            # 將檔案描述添加到元數據
-            self.metadata['fileDescriptions'] = self.file_descriptions
-            
-            return self.metadata
+            return {
+                "experiment_info": self.metadata,
+                "int_files": self.int_files,
+                "dat_files": self.dat_files
+            }
         except Exception as e:
             logger.error(f"解析 TXT 檔案時出錯: {str(e)}")
             raise
@@ -69,40 +71,180 @@ class TxtParser:
                 self.metadata[param] = match.group(1).strip()
     
     def _parse_file_descriptions(self, content):
-        """解析檔案描述區段"""
+        """解析檔案描述區段，分別處理 .int 和 .dat 檔案"""
         file_desc_pattern = r'FileDescBegin(.*?)FileDescEnd'
         file_descs = re.findall(file_desc_pattern, content, re.DOTALL)
         
         for desc_content in file_descs:
-            desc = {}
-            
-            # 提取文件名
+            # 先確定檔案名稱
             filename_match = re.search(r'FileName\s*:\s*([^\n]+)', desc_content)
-            if filename_match:
-                desc['FileName'] = filename_match.group(1).strip()
+            if not filename_match:
+                continue
+                
+            filename = filename_match.group(1).strip()
             
-            # 提取標題
-            caption_match = re.search(r'Caption\s*:\s*([^\n]+)', desc_content)
-            if caption_match:
-                desc['Caption'] = caption_match.group(1).strip()
-            
-            # 提取比例因子
-            scale_match = re.search(r'Scale\s*:\s*([^\n]+)', desc_content)
-            if scale_match:
-                desc['Scale'] = scale_match.group(1).strip()
-            
-            # 提取物理單位
-            unit_match = re.search(r'PhysUnit\s*:\s*([^\n]+)', desc_content)
-            if unit_match:
-                desc['PhysUnit'] = unit_match.group(1).strip()
-            
-            # 提取偏移量
-            offset_match = re.search(r'Offset\s*:\s*([^\n]+)', desc_content)
-            if offset_match:
-                desc['Offset'] = offset_match.group(1).strip()
-            
-            self.file_descriptions.append(desc)
+            if filename.endswith('.int'):
+                self._parse_int_file_description(desc_content, filename)
+            elif filename.endswith('.dat'):
+                self._parse_dat_file_description(desc_content, filename)
     
-    def get_file_descriptions(self):
-        """返回檔案描述列表"""
-        return self.file_descriptions
+    def _parse_int_file_description(self, desc_content, filename):
+        """解析 .int 檔案描述"""
+        desc = {'filename': filename, 'type': 'int'}
+        
+        # 提取標題
+        caption_match = re.search(r'Caption\s*:\s*([^\n]+)', desc_content)
+        if caption_match:
+            desc['caption'] = caption_match.group(1).strip()
+        
+        # 提取比例因子
+        scale_match = re.search(r'Scale\s*:\s*([^\n]+)', desc_content)
+        if scale_match:
+            desc['scale'] = scale_match.group(1).strip()
+        
+        # 提取物理單位
+        unit_match = re.search(r'PhysUnit\s*:\s*([^\n]+)', desc_content)
+        if unit_match:
+            desc['phys_unit'] = unit_match.group(1).strip()
+        
+        # 提取偏移量
+        offset_match = re.search(r'Offset\s*:\s*([^\n]+)', desc_content)
+        if offset_match:
+            desc['offset'] = offset_match.group(1).strip()
+        
+        self.int_files.append(desc)
+    
+    def _parse_dat_file_description(self, desc_content, filename):
+        """解析 .dat 檔案描述"""
+        desc = {'filename': filename, 'type': 'dat'}
+        
+        # 提取標題並解析
+        caption_match = re.search(r'Caption\s*:\s*([^\n]+)', desc_content)
+        if caption_match:
+            caption = caption_match.group(1).strip()
+            desc['caption'] = caption
+            desc.update(self._parse_caption(caption))
+        
+        # 提取 HeaderCols
+        header_cols_match = re.search(r'HeaderCols\s*:\s*([^\n]+)', desc_content)
+        if header_cols_match:
+            desc['header_cols'] = int(header_cols_match.group(1).strip())
+        
+        # 提取 HeaderRows  
+        header_rows_match = re.search(r'HeaderRows\s*:\s*([^\n]+)', desc_content)
+        if header_rows_match:
+            desc['header_rows'] = int(header_rows_match.group(1).strip())
+        
+        # 解析 Delays 行
+        delays_match = re.search(r'Delays[^:]*:\s*([^\n]+)', desc_content)
+        if delays_match:
+            delays_value = delays_match.group(1).strip()
+            desc['delays_raw'] = delays_value
+            desc.update(self._parse_delays_line(delays_value))
+        
+        # 解析 Slewrate 行
+        slewrate_match = re.search(r'Slewrate\s*:\s*([^\n]+)', desc_content)
+        if slewrate_match:
+            slewrate_value = slewrate_match.group(1).strip()
+            desc['slewrate_raw'] = slewrate_value
+            desc.update(self._parse_slewrate_line(slewrate_value))
+        
+        # 提取 Average
+        average_match = re.search(r'Average\s*:\s*([^\n]+)', desc_content)
+        if average_match:
+            desc['average'] = int(average_match.group(1).strip())
+        
+        self.dat_files.append(desc)
+    
+    def _parse_caption(self, caption):
+        """
+        解析 Caption 欄位來判斷量測類型和模式
+        範例: "X(U)-Lia1R(100/100)" 或 "X(U)-It_to_PC(1)"
+        """
+        try:
+            # 提取量測類型 (如 "Lia1R", "It_to_PC")
+            if '-' in caption:
+                measurement_type = caption.split('-')[1].split('(')[0]
+            else:
+                measurement_type = "unknown"
+            
+            # 提取括號內容
+            if '(' in caption and ')' in caption:
+                bracket_content = caption.split('(')[-1].split(')')[0]
+                
+                if '/' in bracket_content:
+                    # CITS 量測 (如 "100/100")
+                    grid_parts = bracket_content.split('/')
+                    if len(grid_parts) == 2:
+                        grid_x, grid_y = map(int, grid_parts)
+                        measurement_mode = "CITS"
+                        grid_size = [grid_x, grid_y]
+                    else:
+                        measurement_mode = "unknown"
+                        grid_size = None
+                else:
+                    # 單點 STS 量測 (如 "1")
+                    point_count = int(bracket_content)
+                    measurement_mode = "STS"
+                    grid_size = None
+            else:
+                measurement_mode = "unknown"
+                grid_size = None
+            
+            return {
+                "measurement_type": measurement_type,
+                "measurement_mode": measurement_mode,
+                "grid_size": grid_size
+            }
+        except Exception as e:
+            logger.warning(f"解析 Caption 時出錯: {caption}, 錯誤: {str(e)}")
+            return {
+                "measurement_type": "unknown",
+                "measurement_mode": "unknown", 
+                "grid_size": None
+            }
+    
+    def _parse_delays_line(self, value):
+        """
+        解析 Delays 行的特殊格式
+        範例: "0.002/0.0069888/1.5E-5/1.5E-5/0"
+        對應: "1/Aqu/3/4/dead"
+        """
+        try:
+            delay_values = value.split('/')
+            delay_keys = ['delay_1', 'delay_aqu', 'delay_3', 'delay_4', 'delay_dead']
+            
+            delays = {}
+            for i, (key, val) in enumerate(zip(delay_keys, delay_values)):
+                try:
+                    delays[key] = float(val)
+                except ValueError:
+                    delays[key] = val  # 保持原始字串如果無法轉換
+            
+            return delays
+        except Exception as e:
+            logger.warning(f"解析 Delays 行時出錯: {value}, 錯誤: {str(e)}")
+            return {}
+    
+    def _parse_slewrate_line(self, value):
+        """
+        解析 Slewrate 行
+        範例: "Infinity/Infinity"
+        """
+        try:
+            slewrate_values = value.split('/')
+            return {
+                'slewrate_1': slewrate_values[0] if len(slewrate_values) > 0 else None,
+                'slewrate_2': slewrate_values[1] if len(slewrate_values) > 1 else None
+            }
+        except Exception as e:
+            logger.warning(f"解析 Slewrate 行時出錯: {value}, 錯誤: {str(e)}")
+            return {}
+    
+    def get_int_files(self):
+        """返回 .int 檔案描述列表"""
+        return self.int_files
+    
+    def get_dat_files(self):
+        """返回 .dat 檔案描述列表"""
+        return self.dat_files
