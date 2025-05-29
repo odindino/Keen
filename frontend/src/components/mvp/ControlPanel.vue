@@ -5,20 +5,65 @@
       <!-- 檔案載入區 -->
       <section class="flex-shrink-0">
         <h2 class="text-lg font-semibold mb-3 text-gray-800">檔案載入</h2>
-        <button 
-          @click="handleLoadFile"
-          :disabled="isLoading"
-          class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          <div class="flex items-center justify-center">
-            <svg v-if="isLoading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span v-if="isLoading">載入中...</span>
-            <span v-else>選擇 TXT 檔案</span>
+        <div class="space-y-3">
+          <!-- TXT 檔案選擇按鈕 -->
+          <button 
+            @click="handleLoadFile"
+            :disabled="isLoading"
+            class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            <div class="flex items-center justify-center">
+              <svg v-if="isLoading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span v-if="isLoading">載入中...</span>
+              <span v-else>選擇 TXT 檔案</span>
+            </div>
+          </button>
+
+          <!-- 分析檔案下拉選單 -->
+          <div v-if="txtFileInfo && txtFileInfo.available_files.length > 0" class="space-y-2">
+            <label class="block text-sm font-medium text-gray-700">選擇要分析的檔案</label>
+            <select 
+              v-model="selectedFileForAnalysis"
+              @change="loadSelectedFileFromDropdown"
+              :disabled="isLoading"
+              class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 disabled:bg-gray-100"
+            >
+              <option value="">-- 請選擇檔案 --</option>
+              
+              <!-- INT 檔案群組 -->
+              <optgroup v-if="intFiles.length > 0" label="影像檔案">
+                <option 
+                  v-for="file in intFiles" 
+                  :key="file.filename"
+                  :value="file.filename"
+                >
+                  {{ file.caption }} ({{ file.filename }})
+                </option>
+              </optgroup>
+              
+              <!-- DAT 檔案群組 -->
+              <optgroup v-if="datFiles.length > 0" label="電性量測檔案">
+                <option 
+                  v-for="file in datFiles" 
+                  :key="file.filename"
+                  :value="file.filename"
+                >
+                  {{ file.caption }} ({{ file.filename }})
+                  <span v-if="file.measurement_mode"> - {{ file.measurement_mode }}</span>
+                </option>
+              </optgroup>
+            </select>
+            
+            <!-- 可用檔案數量提示 -->
+            <div class="text-xs text-gray-500">
+              找到 {{ txtFileInfo.available_files.length }} 個可用檔案
+              <span v-if="intFiles.length > 0">({{ intFiles.length }} 個影像檔案</span><span v-if="intFiles.length > 0 && datFiles.length > 0">，</span><span v-if="datFiles.length > 0">{{ datFiles.length }} 個電性量測檔案</span><span v-if="intFiles.length > 0 || datFiles.length > 0">)</span>
+            </div>
           </div>
-        </button>
+        </div>
       </section>
 
       <!-- 檔案資訊 -->
@@ -326,91 +371,6 @@
         <p class="text-sm">請選擇 TXT 檔案開始分析</p>
       </div>
     </section>
-
-    <!-- 文件選擇區 -->
-    <section v-if="isFileSelectionMode && txtFileInfo" class="flex-shrink-0">
-      <h2 class="text-lg font-semibold mb-3 text-gray-800">選擇要分析的文件</h2>
-      <div class="bg-gray-50 rounded-lg p-4 space-y-3 border">
-        <div class="text-sm text-gray-600 mb-3">
-          找到 {{ txtFileInfo.available_files.length }} 個可用文件，請選擇要分析的文件：
-        </div>
-        
-        <!-- INT 文件 -->
-        <div v-if="intFiles.length > 0" class="space-y-2">
-          <h4 class="text-sm font-medium text-gray-700 flex items-center">
-            <svg class="h-4 w-4 mr-1 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
-            </svg>
-            影像文件 ({{ intFiles.length }})
-          </h4>
-          <div class="grid gap-2">
-            <button 
-              v-for="file in intFiles" 
-              :key="file.filename"
-              @click="selectFile(file)"
-              :class="[
-                'text-left p-3 rounded-md border transition-colors text-sm',
-                selectedFileInfo?.filename === file.filename 
-                  ? 'bg-blue-50 border-blue-300 text-blue-800' 
-                  : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
-              ]"
-            >
-              <div class="font-medium">{{ file.caption }}</div>
-              <div class="text-xs text-gray-500 mt-1">{{ file.filename }}</div>
-            </button>
-          </div>
-        </div>
-
-        <!-- DAT 文件 -->
-        <div v-if="datFiles.length > 0" class="space-y-2">
-          <h4 class="text-sm font-medium text-gray-700 flex items-center">
-            <svg class="h-4 w-4 mr-1 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" clip-rule="evenodd" />
-            </svg>
-            電性量測文件 ({{ datFiles.length }})
-          </h4>
-          <div class="grid gap-2">
-            <button 
-              v-for="file in datFiles" 
-              :key="file.filename"
-              @click="selectFile(file)"
-              :class="[
-                'text-left p-3 rounded-md border transition-colors text-sm',
-                selectedFileInfo?.filename === file.filename 
-                  ? 'bg-green-50 border-green-300 text-green-800' 
-                  : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
-              ]"
-            >
-              <div class="font-medium">{{ file.caption }}</div>
-              <div class="text-xs text-gray-500 mt-1">
-                {{ file.filename }}
-                <span v-if="file.measurement_mode" class="ml-2 px-1.5 py-0.5 bg-gray-100 rounded text-xs">
-                  {{ file.measurement_mode }}
-                </span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <!-- 操作按鈕 -->
-        <div class="flex space-x-2 pt-3 border-t">
-          <button 
-            @click="loadSelectedFile"
-            :disabled="!selectedFileInfo || isLoading"
-            class="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-md transition-colors"
-          >
-            載入選中文件
-          </button>
-          <button 
-            @click="cancelFileSelection"
-            :disabled="isLoading"
-            class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-md transition-colors"
-          >
-            取消
-          </button>
-        </div>
-      </div>
-    </section>
     </div>
   </div>
 </template>
@@ -427,9 +387,8 @@ const isLoading = computed(() => mvpStore.isLoading)
 const isProfileMode = computed(() => mvpStore.isProfileMode)
 
 // 文件選擇相關狀態
-const isFileSelectionMode = computed(() => mvpStore.isFileSelectionMode)
 const txtFileInfo = computed(() => mvpStore.txtFileInfo)
-const selectedFileInfo = computed(() => mvpStore.selectedFileInfo)
+const selectedFileForAnalysis = ref('')
 
 // 計算屬性：分類文件
 const intFiles = computed(() => {
@@ -466,7 +425,7 @@ watch(currentData, (newData) => {
   }
 })
 
-// 載入檔案 - 修改為文件選擇模式
+// 載入檔案 - 修改為選擇 TXT 檔案
 async function handleLoadFile() {
   try {
     mvpStore.setLoading(true)
@@ -484,6 +443,9 @@ async function handleLoadFile() {
       const txtInfo = await loadTxtFile(result.filePath)
       mvpStore.setTxtFileInfo(txtInfo)
       
+      // 重置檔案選擇
+      selectedFileForAnalysis.value = ''
+      
       console.log('MVP: TXT 檔案解析成功，找到', txtInfo.available_files.length, '個可用檔案')
     } else {
       throw new Error(result.error || '檔案選擇失敗')
@@ -492,6 +454,33 @@ async function handleLoadFile() {
     const errorMessage = err instanceof Error ? err.message : '載入檔案時發生錯誤'
     mvpStore.setError(errorMessage)
     console.error('MVP: 載入檔案失敗:', err)
+  } finally {
+    mvpStore.setLoading(false)
+  }
+}
+
+// 從下拉選單載入選中檔案
+async function loadSelectedFileFromDropdown() {
+  const selectedFilename = selectedFileForAnalysis.value
+  const txtInfo = txtFileInfo.value
+  
+  if (!selectedFilename || !txtInfo) return
+  
+  try {
+    mvpStore.setLoading(true)
+    mvpStore.setError(null)
+    
+    console.log('MVP: 開始載入選中檔案:', selectedFilename)
+    
+    // 使用新的 API 載入選中檔案
+    const data = await loadSelectedFileAPI(txtInfo.txt_path, selectedFilename)
+    mvpStore.setCurrentData(data)
+    
+    console.log('MVP: 選中檔案載入成功:', data.name)
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : '載入選中檔案時發生錯誤'
+    mvpStore.setError(errorMessage)
+    console.error('MVP: 載入選中檔案失敗:', err)
   } finally {
     mvpStore.setLoading(false)
   }
@@ -710,43 +699,5 @@ async function resetImageProcessing() {
   } finally {
     imageProcessing.value = false
   }
-}
-
-// 選擇文件
-function selectFile(file: FileInfo) {
-  mvpStore.setSelectedFileInfo(file)
-}
-
-// 載入選中文件
-async function loadSelectedFile() {
-  const selected = selectedFileInfo.value
-  const txtInfo = txtFileInfo.value
-  
-  if (!selected || !txtInfo) return
-  
-  try {
-    mvpStore.setLoading(true)
-    mvpStore.setError(null)
-    
-    console.log('MVP: 開始載入選中文件:', selected.filename)
-    
-    // 使用新的 API 載入選中檔案
-    const data = await loadSelectedFileAPI(txtInfo.txt_path, selected.filename)
-    mvpStore.setCurrentData(data)
-    mvpStore.exitFileSelectionMode()
-    
-    console.log('MVP: 選中文件載入成功:', data.name)
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : '載入選中文件時發生錯誤'
-    mvpStore.setError(errorMessage)
-    console.error('MVP: 載入選中文件失敗:', err)
-  } finally {
-    mvpStore.setLoading(false)
-  }
-}
-
-// 取消文件選擇
-function cancelFileSelection() {
-  mvpStore.exitFileSelectionMode()
 }
 </script>
