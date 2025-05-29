@@ -16,8 +16,7 @@ export async function loadSPMFile(txtFilePath: string): Promise<SPMData> {
 
     // 轉換後端數據格式為前端格式
     const data: SPMData = {
-      id: generateId(),
-      name: result.name || extractFileName(txtFilePath),
+      filename: result.name || extractFileName(txtFilePath),
       txtFile: txtFilePath,
       intFile: result.intFile,
       plotlyConfig: result.plotlyConfig,  // 新增：Plotly 配置
@@ -37,7 +36,7 @@ export async function loadSPMFile(txtFilePath: string): Promise<SPMData> {
       } : undefined
     }
 
-    console.log('API Service: SPM 檔案載入成功:', data.name)
+    console.log('API Service: SPM 檔案載入成功:', data.filename)
     return data
   } catch (error) {
     console.error('API Service: 載入 SPM 檔案失敗:', error)
@@ -87,8 +86,7 @@ export async function loadSelectedFile(txtFilePath: string, selectedFilename: st
 
     // 轉換後端數據格式為前端格式
     const data: SPMData = {
-      id: generateId(),
-      name: result.name || extractFileName(selectedFilename),
+      filename: result.name || extractFileName(selectedFilename),
       txtFile: txtFilePath,
       intFile: result.intFile,
       datFile: result.datFile,
@@ -112,10 +110,94 @@ export async function loadSelectedFile(txtFilePath: string, selectedFilename: st
       sts_data: result.sts_data
     }
 
-    console.log('API Service: 選中檔案載入成功:', data.name)
+    console.log('API Service: 選中檔案載入成功:', data.filename)
     return data
   } catch (error) {
     console.error('API Service: 載入選中檔案失敗:', error)
+    throw error
+  }
+}
+
+/**
+ * 切換 CITS 偏壓
+ */
+export async function switchCitsBias(biasIndex: number): Promise<SPMData> {
+  try {
+    console.log('API Service: 切換 CITS 偏壓索引:', biasIndex)
+    
+    const result = await window.pywebview.api.switch_cits_bias(biasIndex)
+    
+    if (!result.success) {
+      throw new Error(result.error || '切換 CITS 偏壓失敗')
+    }
+
+    // 轉換後端數據格式為前端格式  
+    const data: SPMData = {
+      filename: result.name || 'CITS Data',
+      txtFile: result.txtFile || '',
+      intFile: result.intFile,
+      datFile: result.datFile,
+      fileType: result.fileType,
+      plotlyConfig: result.plotlyConfig,
+      colormap: result.colormap || 'Oranges',
+      dimensions: result.dimensions || {
+        width: 256,
+        height: 256,
+        xRange: 10.0,
+        yRange: 10.0
+      },
+      physUnit: result.physUnit || 'nm',
+      statistics: result.statistics ? {
+        min: result.statistics.min,
+        max: result.statistics.max,
+        mean: result.statistics.mean,
+        rms: result.statistics.rms
+      } : undefined,
+      cits_data: result.cits_data,
+      sts_data: result.sts_data
+    }
+
+    console.log('API Service: CITS 偏壓切換成功，當前偏壓:', result.cits_data?.current_bias)
+    return data
+  } catch (error) {
+    console.error('API Service: 切換 CITS 偏壓失敗:', error)
+    throw error
+  }
+}
+
+/**
+ * 取得 CITS 偏壓資訊
+ */
+export async function getCitsBiasInfo(): Promise<{
+  biasValues: number[]
+  currentBiasIndex: number
+  biasCount: number
+  minBias: number
+  maxBias: number
+  currentBias: number
+}> {
+  try {
+    console.log('API Service: 取得 CITS 偏壓資訊')
+    
+    const result = await window.pywebview.api.get_cits_bias_info()
+    
+    if (!result.success) {
+      throw new Error(result.error || '取得 CITS 偏壓資訊失敗')
+    }
+
+    const biasInfo = {
+      biasValues: result.bias_values || [],
+      currentBiasIndex: result.current_bias_index || 0,
+      biasCount: result.bias_count || 0,
+      minBias: result.min_bias || 0,
+      maxBias: result.max_bias || 0,
+      currentBias: result.current_bias || 0
+    }
+
+    console.log('API Service: CITS 偏壓資訊取得成功:', biasInfo)
+    return biasInfo
+  } catch (error) {
+    console.error('API Service: 取得 CITS 偏壓資訊失敗:', error)
     throw error
   }
 }
@@ -233,6 +315,43 @@ declare global {
             mean: number
             rms: number
           }
+          error?: string
+        }>
+        switch_cits_bias(biasIndex: number): Promise<{
+          success: boolean
+          name?: string
+          intFile?: string
+          datFile?: string
+          txtFile?: string
+          fileType?: string
+          plotlyConfig?: any
+          colormap?: string
+          dimensions?: {
+            width: number
+            height: number
+            xRange: number
+            yRange: number
+          }
+          physUnit?: string
+          statistics?: {
+            min: number
+            max: number
+            mean: number
+            rms: number
+          }
+          cits_data?: any
+          sts_data?: any
+          message?: string
+          error?: string
+        }>
+        get_cits_bias_info(): Promise<{
+          success: boolean
+          bias_values?: number[]
+          current_bias_index?: number
+          bias_count?: number
+          min_bias?: number
+          max_bias?: number
+          current_bias?: number
           error?: string
         }>
       }

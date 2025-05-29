@@ -72,7 +72,7 @@
       <div class="bg-gray-50 rounded-lg p-4 space-y-3 border">
         <div class="text-sm">
           <span class="font-medium text-gray-600">檔案名稱:</span>
-          <span class="ml-2 text-gray-900">{{ currentData.name }}</span>
+          <span class="ml-2 text-gray-900">{{ currentData.filename }}</span>
         </div>
         <div class="text-sm">
           <span class="font-medium text-gray-600">尺寸:</span>
@@ -334,6 +334,13 @@
       </div>
     </section>
 
+    <!-- CITS 偏壓控制 -->
+    <CitsBiasSlider 
+      :disabled="isLoading"
+      @bias-changed="handleBiasChanged"
+      @error="handleCitsError"
+    />
+
     <!-- 統計資訊 -->
     <section v-if="currentData && currentData.statistics" class="flex-shrink-0">
       <h2 class="text-lg font-semibold mb-3 text-gray-800">統計資訊</h2>
@@ -377,6 +384,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import CitsBiasSlider from './CitsBiasSlider.vue'
 import mvpStore from '../../stores/mvpStore'
 import type { FileInfo } from '../../stores/mvpStore'
 import { loadSPMFile, loadTxtFile, loadSelectedFile as loadSelectedFileAPI } from '../../services/apiService'
@@ -476,7 +484,7 @@ async function loadSelectedFileFromDropdown() {
     const data = await loadSelectedFileAPI(txtInfo.txt_path, selectedFilename)
     mvpStore.setCurrentData(data)
     
-    console.log('MVP: 選中檔案載入成功:', data.name)
+    console.log('MVP: 選中檔案載入成功:', data.filename)
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : '載入選中檔案時發生錯誤'
     mvpStore.setError(errorMessage)
@@ -699,5 +707,16 @@ async function resetImageProcessing() {
   } finally {
     imageProcessing.value = false
   }
+}
+
+// CITS 偏壓控制事件處理器
+function handleBiasChanged(biasIndex: number, biasValue: number) {
+  console.log('ControlPanel: CITS 偏壓已切換:', { biasIndex, biasValue })
+  // 這裡可以添加額外的邏輯，比如更新圖表或通知其他組件
+}
+
+function handleCitsError(message: string) {
+  console.error('ControlPanel: CITS 錯誤:', message)
+  // 錯誤已經在 store 中設置，這裡可以添加額外的錯誤處理邏輯
 }
 </script>

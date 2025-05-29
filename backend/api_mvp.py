@@ -36,6 +36,10 @@ class SPMAnalyzerMVP:
         self.available_files = []  # 可用檔案清單
         self.selected_file = None  # 當前選中的檔案
         
+        # 新增：CITS 數據相關
+        self.current_cits_data = None  # 存儲完整的 CITS 3D 數據
+        self.current_cits_metadata = None  # 存儲 CITS 元數據
+        
         logger.info("SPM 分析器 MVP 初始化完成")
     
     def select_txt_file(self):
@@ -1059,17 +1063,40 @@ class SPMAnalyzerMVP:
                 logger.error(error_msg)
                 return {"success": False, "error": error_msg}
             
+            # 儲存完整的 CITS 數據供後續切換使用
+            self.current_cits_data = {
+                'data_3d': data_3d,
+                'bias_values': bias_values,
+                'grid_x': dat_result.get('x_grid'),
+                'grid_y': dat_result.get('y_grid'),
+                'current_bias_index': 0
+            }
+            
+            # 獲取座標網格和範圍
+            x_grid = dat_result.get('x_grid')
+            y_grid = dat_result.get('y_grid')
+            
+            if x_grid is not None and y_grid is not None:
+                x_range = float(np.max(x_grid) - np.min(x_grid))
+                y_range = float(np.max(y_grid) - np.min(y_grid))
+            else:
+                # 從網格大小估算範圍
+                grid_size = dat_result.get('grid_size', [32, 32])
+                x_range = float(grid_size[0] * 0.3)  # 假設每個點間距 0.3 nm
+                y_range = float(grid_size[1] * 0.3)
+            
+            # 儲存 CITS 元數據
+            self.current_cits_metadata = {
+                'x_range': x_range,
+                'y_range': y_range,
+                'bias_values': bias_values,
+                'grid_size': dat_result.get('grid_size', [32, 32]),
+                'units': dat_result.get('units', {'bias': 'V', 'current': 'A'})
+            }
+            
             # 使用第一個偏壓的數據
             initial_data = data_3d[0]  # shape: (grid_y, grid_x)
             initial_bias = bias_values[0]
-            
-            # 獲取座標網格
-            x_grid = dat_result['x_grid']
-            y_grid = dat_result['y_grid']
-            
-            # 計算座標範圍
-            x_range = float(np.max(x_grid) - np.min(x_grid))
-            y_range = float(np.max(y_grid) - np.min(y_grid))
             
             # 生成 Plotly 配置
             plotly_config = self._generate_plotly_config(
@@ -1095,12 +1122,15 @@ class SPMAnalyzerMVP:
                     "xRange": x_range,
                     "yRange": y_range
                 },
-                "physUnit": dat_result['units']['bias'],
+                "physUnit": "A",
                 "statistics": statistics,
                 "cits_data": {
                     "bias_values": bias_values.tolist(),
                     "current_bias_index": 0,
                     "current_bias": float(initial_bias),
+                    "bias_count": len(bias_values),
+                    "min_bias": float(bias_values.min()),
+                    "max_bias": float(bias_values.max()),
                     "measurement_type": dat_result['measurement_type'],
                     "grid_size": dat_result['grid_size']
                 }
@@ -1135,3 +1165,93 @@ class SPMAnalyzerMVP:
             error_msg = f"處理 STS 數據時出錯: {str(e)}"
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
+    
+    def switch_cits_bias(self, bias_index):
+        """切換 CITS 數據的偏壓"""
+        try:
+            if not hasattr(self, 'current_cits_data') or self.current_cits_data is None:
+                return {"success": False, "error": "無 CITS 數據"}
+            
+            data_3d = self.current_cits_data['data_3d']
+            bias_values = self.current_cits_data['bias_values']
+            
+            if bias_index < 0 or bias_index >= len(data_3d):
+                return {"success": False, "error": f"偏壓索引超出範圍: {bias_index}"}
+            
+            logger.info(f"切換 CITS 偏壓到索引: {bias_index}")
+            
+            # 獲取指定偏壓的 2D 數據
+            slice_data = data_3d[bias_index]
+            current_bias = bias_values[bias_index]
+            
+            # 更新當前偏壓索引
+            self.current_cits_data['current_bias_index'] = bias_index
+            
+            # 生成新的 Plotly 配置
+            plotly_config = self._generate_plotly_config(
+                slice_data,
+                self.current_cits_metadata['x_range'],
+                self.current_cits_metadata['y_range'],
+                "A",  # CITS 數據單位
+                "RdBu_r"  # 適合電性數據的配色
+            )
+            
+            # 計算統計資訊
+            statistics = self._calculate_statistics(slice_data)
+            
+            logger.info(f"CITS 偏壓切換成功: {current_bias:.3f} V")
+            
+            # 構建完整的 CITS 數據響應
+            cits_data = {
+                "bias_values": [float(b) for b in self.current_cits_data['bias_values']],
+                "current_bias_index": bias_index,
+                "current_bias": float(current_bias),
+                "bias_count": len(self.current_cits_data['bias_values']),
+                "min_bias": float(min(self.current_cits_data['bias_values'])),
+                "max_bias": float(max(self.current_cits_data['bias_values'])),
+                "measurement_type": "CITS",
+                "grid_size": self.current_cits_metadata.get('grid_size', [])
+            }
+            
+            return {
+                "success": True,
+                "name": f"CITS @ {current_bias:.3f}V",
+                "plotlyConfig": plotly_config,
+                "statistics": statistics,
+                "colormap": "RdBu_r",
+                "dimensions": {
+                    "width": self.current_cits_metadata.get('grid_size', [256, 256])[0],
+                    "height": self.current_cits_metadata.get('grid_size', [256, 256])[1],
+                    "xRange": float(self.current_cits_metadata['x_range']),
+                    "yRange": float(self.current_cits_metadata['y_range'])
+                },
+                "physUnit": "A",
+                "cits_data": cits_data,
+                "current_bias": float(current_bias),
+                "bias_index": bias_index
+            }
+            
+        except Exception as e:
+            logger.error(f"切換 CITS 偏壓失敗: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def get_cits_bias_info(self):
+        """獲取 CITS 偏壓資訊"""
+        try:
+            if not hasattr(self, 'current_cits_data') or self.current_cits_data is None:
+                return {"success": False, "error": "無 CITS 數據"}
+            
+            bias_values = self.current_cits_data['bias_values']
+            
+            return {
+                "success": True,
+                "bias_values": bias_values.tolist(),
+                "bias_count": len(bias_values),
+                "min_bias": float(bias_values.min()),
+                "max_bias": float(bias_values.max()),
+                "current_bias_index": self.current_cits_data.get('current_bias_index', 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"獲取 CITS 偏壓資訊失敗: {str(e)}")
+            return {"success": False, "error": str(e)}

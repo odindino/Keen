@@ -2,13 +2,12 @@
 import { reactive } from 'vue'
 
 export interface SPMData {
-  id: string
-  name: string
+  filename: string
   txtFile: string
   intFile?: string
   datFile?: string
   fileType?: string
-  plotlyConfig: any  // 新增：Plotly 配置（data + layout + config）
+  plotlyConfig: any
   colormap: string
   dimensions: {
     width: number
@@ -23,11 +22,19 @@ export interface SPMData {
     mean: number
     rms: number
   }
-  cits_data?: any
+  cits_data?: {
+    bias_values: number[]
+    current_bias_index: number
+    current_bias: number
+    bias_count: number
+    min_bias: number
+    max_bias: number
+    measurement_type: string
+    grid_size: number[]
+  }
   sts_data?: any
 }
 
-// 文件選擇相關介面
 export interface FileInfo {
   filename: string
   type: 'int' | 'dat'
@@ -47,7 +54,6 @@ export interface TxtFileInfo {
   available_files: FileInfo[]
 }
 
-// 高度剖面相關介面
 export interface ProfilePoint {
   x: number
   y: number
@@ -56,41 +62,48 @@ export interface ProfilePoint {
 export interface ProfileData {
   distance: number[]
   height: number[]
-  length: number  // 新增：剖面總長度
+  length: number
   startPoint: ProfilePoint
   endPoint: ProfilePoint
-  isPreview?: boolean  // 新增：標記是否為預覽數據
+  isPreview?: boolean
   stats?: {
     min: number
     max: number
     mean: number
     median: number
-    std: number  // 新增：標準差
+    std: number
     range: number
-    rms: number  // 新增：均方根
+    rms: number
   }
 }
 
-// 簡化的響應式狀態管理
+export interface CitsBiasInfo {
+  biasValues: number[]
+  currentBiasIndex: number
+  biasCount: number
+  minBias: number
+  maxBias: number
+  currentBias: number
+}
+
 export const mvpStore = reactive({
-  // 原有狀態
   currentData: null as SPMData | null,
   isLoading: false,
   error: null as string | null,
   
-  // 文件選擇相關狀態
   txtFileInfo: null as TxtFileInfo | null,
   isFileSelectionMode: false,
   selectedFileInfo: null as FileInfo | null,
   
-  // 高度剖面相關狀態
   isProfileMode: false,
   profileStartPoint: null as ProfilePoint | null,
   profileCurrentPoint: null as ProfilePoint | null,
   profileEndPoint: null as ProfilePoint | null,
   profileData: null as ProfileData | null,
   
-  // 原有操作方法
+  citsData: null as CitsBiasInfo | null,
+  isCitsMode: false,
+  
   setLoading(loading: boolean) {
     this.isLoading = loading
   },
@@ -101,6 +114,38 @@ export const mvpStore = reactive({
   
   setCurrentData(data: SPMData | null) {
     this.currentData = data
+    
+    if (data?.cits_data) {
+      this.setCitsData({
+        biasValues: data.cits_data.bias_values,
+        currentBiasIndex: data.cits_data.current_bias_index,
+        biasCount: data.cits_data.bias_count,
+        minBias: data.cits_data.min_bias,
+        maxBias: data.cits_data.max_bias,
+        currentBias: data.cits_data.current_bias
+      })
+      this.isCitsMode = true
+    } else if (!this.isCitsMode) {
+      // 只有當前不在CITS模式時才清除CITS數據
+      // 這樣可以防止在CITS偏壓切換過程中意外清除CITS狀態
+      this.citsData = null
+      this.isCitsMode = false
+    }
+  },
+
+  // 新增：專門用於更新當前數據但保持CITS狀態的方法
+  updateCurrentDataKeepCits(data: SPMData | null) {
+    if (data && this.currentData) {
+      // 只更新基本屬性，保持CITS狀態不變
+      this.currentData.plotlyConfig = data.plotlyConfig
+      this.currentData.statistics = data.statistics
+      this.currentData.colormap = data.colormap
+      if (data.dimensions) {
+        this.currentData.dimensions = data.dimensions
+      }
+    } else {
+      this.setCurrentData(data)
+    }
   },
   
   updateColormap(colormap: string) {
@@ -109,34 +154,25 @@ export const mvpStore = reactive({
     }
   },
 
-  // 文件選擇相關方法
   setTxtFileInfo(info: TxtFileInfo | null) {
     this.txtFileInfo = info
     this.isFileSelectionMode = !!info
     this.selectedFileInfo = null
-    console.log('MVP Store: 設置 TXT 文件信息:', info ? `${info.available_files.length} 個可用文件` : '清除')
   },
 
   setSelectedFileInfo(fileInfo: FileInfo | null) {
     this.selectedFileInfo = fileInfo
-    console.log('MVP Store: 選擇文件:', fileInfo?.filename || '清除選擇')
   },
 
   exitFileSelectionMode() {
     this.isFileSelectionMode = false
     this.txtFileInfo = null
     this.selectedFileInfo = null
-    console.log('MVP Store: 退出文件選擇模式')
   },
 
-  // 高度剖面相關方法
   toggleProfileMode() {
     this.isProfileMode = !this.isProfileMode
-    
-    // 切換模式時清除現有剖面相關數據
     this.resetProfileData()
-    
-    console.log('MVP Store: 高度剖面模式', this.isProfileMode ? '啟動' : '關閉')
   },
 
   resetProfileData() {
@@ -144,15 +180,13 @@ export const mvpStore = reactive({
     this.profileCurrentPoint = null
     this.profileEndPoint = null
     this.profileData = null
-    console.log('MVP Store: 重置剖面數據')
   },
 
   setProfileStartPoint(point: ProfilePoint) {
     this.profileStartPoint = point
-    this.profileCurrentPoint = point  // 初始时當前點與起點相同
+    this.profileCurrentPoint = point
     this.profileEndPoint = null
     this.profileData = null
-    console.log('MVP Store: 設置剖面起點:', point)
   },
 
   updateProfileCurrentPoint(point: ProfilePoint) {
@@ -162,17 +196,47 @@ export const mvpStore = reactive({
 
   setProfileEndPoint(point: ProfilePoint) {
     if (!this.profileStartPoint || !this.isProfileMode) return
-    
     this.profileEndPoint = point
-    console.log('MVP Store: 設置剖面終點:', point)
-    
-    // TODO: 在這裡可以調用後端 API 來計算剖面數據
-    // this.calculateProfileData(this.profileStartPoint, point)
   },
 
   setProfileData(data: ProfileData) {
     this.profileData = data
-    console.log('MVP Store: 設置剖面數據，點數:', data.distance.length)
+  },
+
+  setCitsData(data: CitsBiasInfo | null) {
+    this.citsData = data
+    this.isCitsMode = !!data
+  },
+
+  updateCitsBiasIndex(index: number) {
+    if (!this.citsData) return
+    
+    this.citsData.currentBiasIndex = index
+    this.citsData.currentBias = this.citsData.biasValues[index]
+    
+    if (this.currentData?.cits_data) {
+      this.currentData.cits_data.current_bias_index = index
+      this.currentData.cits_data.current_bias = this.citsData.currentBias
+    }
+  },
+
+  getCitsBiasIndex(): number {
+    return this.citsData?.currentBiasIndex ?? 0
+  },
+
+  getCitsBiasValue(): number {
+    return this.citsData?.currentBias ?? 0
+  },
+
+  getCitsBiasRange(): { min: number, max: number } {
+    return {
+      min: this.citsData?.minBias ?? 0,
+      max: this.citsData?.maxBias ?? 0
+    }
+  },
+
+  getCitsBiasCount(): number {
+    return this.citsData?.biasCount ?? 0
   },
 
   clear() {
@@ -182,8 +246,8 @@ export const mvpStore = reactive({
     this.resetProfileData()
     this.isProfileMode = false
     this.exitFileSelectionMode()
+    this.setCitsData(null)
   }
 })
 
-// 導出 store 實例
 export default mvpStore
