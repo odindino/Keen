@@ -7,6 +7,9 @@ import plotly.io as pio
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import to_hex
+import re
+import struct
+import traceback
 
 # 導入影像分析功能
 from core.analysis.int_analysis import IntAnalysis
@@ -27,6 +30,12 @@ class SPMAnalyzerMVP:
         self.current_metadata = None  # 新增：存儲元數據
         self.current_processed_data = None  # 新增：存儲處理後的數據
         self.processing_history = []  # 新增：處理歷史記錄
+        
+        # 新增：檔案選擇功能相關
+        self.current_txt_data = None  # 存儲 TXT 檔案解析結果
+        self.available_files = []  # 可用檔案清單
+        self.selected_file = None  # 當前選中的檔案
+        
         logger.info("SPM 分析器 MVP 初始化完成")
     
     def select_txt_file(self):
@@ -62,6 +71,112 @@ class SPMAnalyzerMVP:
                 "success": False,
                 "error": f"選擇檔案時發生錯誤: {str(e)}"
             }
+    
+    def load_txt_file(self, txt_file_path):
+        """載入 TXT 檔案並回傳可用檔案清單"""
+        try:
+            logger.info(f"開始解析 TXT 檔案: {txt_file_path}")
+            
+            # 檢查檔案是否存在
+            if not os.path.exists(txt_file_path):
+                error_msg = f"TXT 檔案不存在: {txt_file_path}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 使用新的 TxtParser 解析檔案
+            from core.parsers import TxtParser
+            
+            parser = TxtParser(txt_file_path)
+            result = parser.parse()
+            
+            # 組合可用檔案清單
+            available_files = []
+            
+            # 處理 .int 檔案
+            for int_file in result['int_files']:
+                file_info = {
+                    'filename': int_file['filename'],
+                    'type': 'int',
+                    'caption': int_file['caption'],
+                    'file_type': 'image',
+                    'scale': int_file.get('scale'),
+                    'phys_unit': int_file.get('phys_unit'),
+                    'offset': int_file.get('offset')
+                }
+                available_files.append(file_info)
+            
+            # 處理 .dat 檔案  
+            for dat_file in result['dat_files']:
+                file_info = {
+                    'filename': dat_file['filename'],
+                    'type': 'dat',
+                    'caption': dat_file['caption'],
+                    'measurement_mode': dat_file.get('measurement_mode'),
+                    'measurement_type': dat_file.get('measurement_type'),
+                    'grid_size': dat_file.get('grid_size')
+                }
+                available_files.append(file_info)
+            
+            # 儲存解析結果
+            self.current_txt_data = result
+            self.available_files = available_files
+            self.selected_file = None
+            
+            logger.info(f"TXT 檔案解析完成: {len(available_files)} 個可用檔案")
+            
+            return {
+                'success': True,
+                'txt_path': txt_file_path,
+                'experiment_info': result['experiment_info'],
+                'available_files': available_files
+            }
+            
+        except Exception as e:
+            error_msg = f"解析 TXT 檔案時出錯: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+    
+    def load_selected_file(self, txt_file_path, selected_filename):
+        """載入用戶選擇的特定檔案"""
+        try:
+            logger.info(f"開始載入選中檔案: {selected_filename}")
+            
+            # 檢查是否已經解析過 TXT 檔案
+            if self.current_txt_data is None:
+                # 先解析 TXT 檔案
+                txt_result = self.load_txt_file(txt_file_path)
+                if not txt_result['success']:
+                    return txt_result
+            
+            # 找到選中檔案的資訊
+            selected_file_info = None
+            for file_info in self.available_files:
+                if file_info['filename'] == selected_filename:
+                    selected_file_info = file_info
+                    break
+            
+            if not selected_file_info:
+                error_msg = f"找不到檔案: {selected_filename}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 儲存選中檔案資訊
+            self.selected_file = selected_file_info
+            
+            # 根據檔案類型載入
+            if selected_file_info['type'] == 'int':
+                return self._load_int_file(txt_file_path, selected_filename, selected_file_info)
+            elif selected_file_info['type'] == 'dat':
+                return self._load_dat_file(txt_file_path, selected_filename, selected_file_info)
+            else:
+                error_msg = f"不支援的檔案類型: {selected_file_info['type']}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+                
+        except Exception as e:
+            error_msg = f"載入選中檔案時出錯: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
     
     def load_spm_file(self, txt_file_path):
         """載入 SPM 檔案並生成 Plotly JSON 配置"""
@@ -148,7 +263,6 @@ class SPMAnalyzerMVP:
         except Exception as e:
             error_msg = f"載入 SPM 檔案時出錯: {str(e)}"
             logger.error(error_msg)
-            import traceback
             logger.error(f"詳細錯誤: {traceback.format_exc()}")
             return {"success": False, "error": error_msg}
     
@@ -269,7 +383,6 @@ class SPMAnalyzerMVP:
             
         except Exception as e:
             logger.error(f"計算高度剖面失敗: {str(e)}")
-            import traceback
             logger.error(f"詳細錯誤: {traceback.format_exc()}")
             return {"success": False, "error": str(e)}
 
@@ -464,7 +577,6 @@ class SPMAnalyzerMVP:
             parameters = {}
             
             # 提取基本參數
-            import re
             
             # 掃描參數
             params_to_extract = [
@@ -619,7 +731,6 @@ class SPMAnalyzerMVP:
     def _parse_int_file(self, int_file_path, scale, x_pixels, y_pixels):
         """解析 INT 檔案"""
         try:
-            import struct
             
             with open(int_file_path, 'rb') as f:
                 int_file = f.read()
@@ -811,3 +922,216 @@ class SPMAnalyzerMVP:
         except Exception as e:
             logger.error(f"重置影像時出錯: {str(e)}")
             return {"success": False, "error": str(e)}
+    
+    def _load_int_file(self, txt_file_path, selected_filename, file_info):
+        """載入 .int 檔案"""
+        try:
+            logger.info(f"載入 .int 檔案: {selected_filename}")
+            
+            # 構建完整的檔案路徑
+            base_dir = os.path.dirname(txt_file_path)
+            int_file_path = os.path.join(base_dir, selected_filename)
+            
+            if not os.path.exists(int_file_path):
+                error_msg = f"INT 檔案不存在: {int_file_path}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 從實驗資訊中獲取基本參數
+            exp_info = self.current_txt_data['experiment_info']
+            
+            # 提取參數
+            try:
+                scale = float(file_info['scale'])
+                phys_unit = file_info['phys_unit']
+                x_pixels = int(exp_info.get('xPixel', '256'))
+                y_pixels = int(exp_info.get('yPixel', '256'))
+                x_range = float(exp_info.get('XScanRange', '10.0'))
+                y_range = float(exp_info.get('YScanRange', '10.0'))
+            except (ValueError, KeyError) as e:
+                error_msg = f"解析參數失敗: {e}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 解析 INT 檔案數據
+            raw_data = self._parse_int_file(int_file_path, scale, x_pixels, y_pixels)
+            
+            # 存儲數據和元數據
+            self.current_raw_data = raw_data
+            self.current_processed_data = raw_data.copy()
+            self.processing_history = []
+            self.current_metadata = {
+                'scale': scale,
+                'phys_unit': phys_unit,
+                'x_pixels': x_pixels,
+                'y_pixels': y_pixels,
+                'x_range': x_range,
+                'y_range': y_range
+            }
+            
+            # 計算統計資訊
+            statistics = self._calculate_statistics(raw_data)
+            
+            # 生成 Plotly 配置
+            plotly_config = self._generate_plotly_config(
+                raw_data, x_range, y_range, phys_unit, "Oranges"
+            )
+            
+            logger.info(f".int 檔案載入成功: {selected_filename}")
+            
+            return {
+                "success": True,
+                "name": file_info['caption'],
+                "intFile": int_file_path,
+                "txtFile": txt_file_path,
+                "fileType": "int",
+                "plotlyConfig": plotly_config,
+                "colormap": "Oranges",
+                "dimensions": {
+                    "width": x_pixels,
+                    "height": y_pixels,
+                    "xRange": x_range,
+                    "yRange": y_range
+                },
+                "physUnit": phys_unit,
+                "statistics": statistics
+            }
+            
+        except Exception as e:
+            error_msg = f"載入 .int 檔案時出錯: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+    
+    def _load_dat_file(self, txt_file_path, selected_filename, file_info):
+        """載入 .dat 檔案"""
+        try:
+            logger.info(f"載入 .dat 檔案: {selected_filename}")
+            
+            # 構建完整的檔案路徑
+            base_dir = os.path.dirname(txt_file_path)
+            dat_file_path = os.path.join(base_dir, selected_filename)
+            
+            if not os.path.exists(dat_file_path):
+                error_msg = f"DAT 檔案不存在: {dat_file_path}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 找到對應的 dat_info
+            dat_info = None
+            for dat_file in self.current_txt_data['dat_files']:
+                if dat_file['filename'] == selected_filename:
+                    dat_info = dat_file
+                    break
+            
+            if not dat_info:
+                error_msg = f"找不到 DAT 檔案資訊: {selected_filename}"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 使用 DatParser 解析檔案
+            from core.parsers import DatParser
+            
+            parser = DatParser()
+            dat_result = parser.parse(dat_file_path, dat_info)
+            
+            # 根據量測模式處理結果
+            if dat_result['measurement_mode'] == 'CITS':
+                return self._process_cits_result(dat_result, file_info, txt_file_path)
+            else:
+                return self._process_sts_result(dat_result, file_info, txt_file_path)
+                
+        except Exception as e:
+            error_msg = f"載入 .dat 檔案時出錯: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+    
+    def _process_cits_result(self, dat_result, file_info, txt_file_path):
+        """處理 CITS 量測結果"""
+        try:
+            logger.info("處理 CITS 量測數據")
+            
+            # 獲取第一個偏壓的數據作為預設顯示
+            data_3d = dat_result['data_3d']  # shape: (n_bias, grid_y, grid_x)
+            bias_values = dat_result['bias_values']
+            
+            if len(data_3d) == 0:
+                error_msg = "CITS 數據為空"
+                logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+            
+            # 使用第一個偏壓的數據
+            initial_data = data_3d[0]  # shape: (grid_y, grid_x)
+            initial_bias = bias_values[0]
+            
+            # 獲取座標網格
+            x_grid = dat_result['x_grid']
+            y_grid = dat_result['y_grid']
+            
+            # 計算座標範圍
+            x_range = float(np.max(x_grid) - np.min(x_grid))
+            y_range = float(np.max(y_grid) - np.min(y_grid))
+            
+            # 生成 Plotly 配置
+            plotly_config = self._generate_plotly_config(
+                initial_data, x_range, y_range, "A", "RdBu_r"  # 使用 RdBu_r 配色更適合電性數據
+            )
+            
+            # 計算統計資訊
+            statistics = self._calculate_statistics(initial_data)
+            
+            logger.info(f"CITS 數據處理完成: {len(bias_values)} 個偏壓點")
+            
+            return {
+                "success": True,
+                "name": file_info['caption'],
+                "datFile": dat_result['file_path'],
+                "txtFile": txt_file_path,
+                "fileType": "cits",
+                "plotlyConfig": plotly_config,
+                "colormap": "RdBu_r",
+                "dimensions": {
+                    "width": dat_result['grid_size'][0],
+                    "height": dat_result['grid_size'][1],
+                    "xRange": x_range,
+                    "yRange": y_range
+                },
+                "physUnit": dat_result['units']['bias'],
+                "statistics": statistics,
+                "cits_data": {
+                    "bias_values": bias_values.tolist(),
+                    "current_bias_index": 0,
+                    "current_bias": float(initial_bias),
+                    "measurement_type": dat_result['measurement_type'],
+                    "grid_size": dat_result['grid_size']
+                }
+            }
+            
+        except Exception as e:
+            error_msg = f"處理 CITS 數據時出錯: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+    
+    def _process_sts_result(self, dat_result, file_info, txt_file_path):
+        """處理 STS 量測結果"""
+        try:
+            logger.info("處理 STS 量測數據")
+            
+            # STS 數據暫時只識別，不提供視覺化
+            return {
+                "success": True,
+                "name": file_info['caption'],
+                "datFile": dat_result['file_path'],
+                "txtFile": txt_file_path,
+                "fileType": "sts",
+                "message": "STS 數據已載入，視覺化功能開發中",
+                "sts_data": {
+                    "bias_values": dat_result['bias_values'].tolist(),
+                    "n_points": dat_result['n_points'],
+                    "measurement_type": dat_result['measurement_type']
+                }
+            }
+            
+        except Exception as e:
+            error_msg = f"處理 STS 數據時出錯: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}

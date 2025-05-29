@@ -5,7 +5,9 @@ export interface SPMData {
   id: string
   name: string
   txtFile: string
-  intFile: string
+  intFile?: string
+  datFile?: string
+  fileType?: string
   plotlyConfig: any  // 新增：Plotly 配置（data + layout + config）
   colormap: string
   dimensions: {
@@ -15,12 +17,34 @@ export interface SPMData {
     yRange: number
   }
   physUnit: string
-  statistics: {
+  statistics?: {
     min: number
     max: number
     mean: number
     rms: number
   }
+  cits_data?: any
+  sts_data?: any
+}
+
+// 文件選擇相關介面
+export interface FileInfo {
+  filename: string
+  type: 'int' | 'dat'
+  caption: string
+  file_type?: string
+  scale?: number
+  phys_unit?: string
+  offset?: number
+  measurement_mode?: string
+  measurement_type?: string
+  grid_size?: string
+}
+
+export interface TxtFileInfo {
+  txt_path: string
+  experiment_info: any
+  available_files: FileInfo[]
 }
 
 // 高度剖面相關介面
@@ -54,6 +78,11 @@ export const mvpStore = reactive({
   isLoading: false,
   error: null as string | null,
   
+  // 文件選擇相關狀態
+  txtFileInfo: null as TxtFileInfo | null,
+  isFileSelectionMode: false,
+  selectedFileInfo: null as FileInfo | null,
+  
   // 高度剖面相關狀態
   isProfileMode: false,
   profileStartPoint: null as ProfilePoint | null,
@@ -80,6 +109,26 @@ export const mvpStore = reactive({
     }
   },
 
+  // 文件選擇相關方法
+  setTxtFileInfo(info: TxtFileInfo | null) {
+    this.txtFileInfo = info
+    this.isFileSelectionMode = !!info
+    this.selectedFileInfo = null
+    console.log('MVP Store: 設置 TXT 文件信息:', info ? `${info.available_files.length} 個可用文件` : '清除')
+  },
+
+  setSelectedFileInfo(fileInfo: FileInfo | null) {
+    this.selectedFileInfo = fileInfo
+    console.log('MVP Store: 選擇文件:', fileInfo?.filename || '清除選擇')
+  },
+
+  exitFileSelectionMode() {
+    this.isFileSelectionMode = false
+    this.txtFileInfo = null
+    this.selectedFileInfo = null
+    console.log('MVP Store: 退出文件選擇模式')
+  },
+
   // 高度剖面相關方法
   toggleProfileMode() {
     this.isProfileMode = !this.isProfileMode
@@ -100,7 +149,7 @@ export const mvpStore = reactive({
 
   setProfileStartPoint(point: ProfilePoint) {
     this.profileStartPoint = point
-    this.profileCurrentPoint = point  // 初始時當前點與起點相同
+    this.profileCurrentPoint = point  // 初始时當前點與起點相同
     this.profileEndPoint = null
     this.profileData = null
     console.log('MVP Store: 設置剖面起點:', point)
@@ -132,6 +181,7 @@ export const mvpStore = reactive({
     this.isLoading = false
     this.resetProfileData()
     this.isProfileMode = false
+    this.exitFileSelectionMode()
   }
 })
 
