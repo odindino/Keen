@@ -485,8 +485,9 @@ class SPMAnalyzerMVP:
             # 轉換 matplotlib colormap 到 Plotly 格式
             plotly_colormap = self._matplotlib_to_plotly_colorscale(mpl_cmap_name, reverse=reverse)
             
-            # 計算 Z 值範圍 (保持原始數據，不做翻轉)
-            z_data = raw_data.tolist()
+            # 在數據層面進行翻轉，確保顯示方向正確
+            flipped_data = np.flipud(raw_data)
+            z_data = flipped_data.tolist()
             flat_z = [val for row in z_data for val in row]
             z_min = min(flat_z)
             z_max = max(flat_z)
@@ -537,8 +538,7 @@ class SPMAnalyzerMVP:
                     'constrain': 'domain',
                     'showgrid': True,
                     'gridcolor': '#e5e5e5',
-                    'range': [0, y_range],
-                    'autorange': 'reversed'  # 反轉 y 軸，讓數據顯示如 matplotlib 一樣
+                    'range': [0, y_range]
                 },
                 'margin': {'l': 60, 'r': 80, 't': 20, 'b': 60},
                 'autosize': True,
