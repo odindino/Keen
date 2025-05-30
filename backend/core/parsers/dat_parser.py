@@ -196,10 +196,30 @@ class DatParser:
                     self.logger.warning(f"無法自動調整網格尺寸，將截斷數據到 {expected_points} 點")
                     actual_points = min(actual_points, expected_points)
             
-            # 重塑座標為2D網格
+            # 判斷掃描方向
+            scan_direction = self._determine_scan_direction(
+                header_info, dat_info, grid_x, grid_y
+            )
+            
+            # 獲取測量數據
+            measurement_data = parsed_data['measurement_data'][:, :actual_points]
             x_coords = header_info['x_coords'][:actual_points]
             y_coords = header_info['y_coords'][:actual_points]
             
+            # 根據掃描方向調整數據（使用高效的 reshape + flip 方法）
+            if scan_direction == 'upward':
+                self.logger.info("檢測到 upward 掃描，正在翻轉數據...")
+                
+                # 使用 reshape + flip 方法翻轉測量數據（最高效）
+                measurement_data = measurement_data.reshape(-1, grid_y, grid_x)[:, ::-1, :].reshape(-1, grid_x * grid_y)
+                
+                # 同步翻轉座標（使用相同的高效方法）
+                coords_2d = np.column_stack([x_coords, y_coords]).reshape(grid_y, grid_x, 2)
+                coords_flipped = coords_2d[::-1, :, :].reshape(-1, 2)
+                x_coords = coords_flipped[:, 0]
+                y_coords = coords_flipped[:, 1]
+            
+            # 重塑座標為2D網格
             try:
                 # 嘗試直接重塑
                 x_grid = x_coords.reshape(grid_y, grid_x)
@@ -219,15 +239,12 @@ class DatParser:
                 x_grid, y_grid = np.meshgrid(unique_x, unique_y)
             
             # 重塑量測數據為 (n_bias, grid_y, grid_x)
-            measurement_data = parsed_data['measurement_data'][:, :actual_points]
-               
             try:
                 data_3d = measurement_data.reshape(
                     parsed_data['n_bias_points'], grid_y, grid_x
                 )
             except ValueError as e:
                 raise ValueError(f"無法重塑測量數據為 3D 陣列: {e}")
-            
             
             result = {
                 'measurement_mode': 'CITS',
@@ -237,10 +254,11 @@ class DatParser:
                 'data_3d': data_3d,  # shape: (n_bias, grid_y, grid_x)
                 'bias_values': parsed_data['bias_values'],
                 'times': parsed_data['times'],
-                'distances': parsed_data['distances']
+                'distances': parsed_data['distances'],
+                'scan_direction': scan_direction
             }
             
-            self.logger.info(f"CITS 數據處理完成: {grid_x}×{grid_y} 網格，{len(parsed_data['bias_values'])} 個偏壓點")
+            self.logger.info(f"CITS 數據處理完成: {grid_x}×{grid_y} 網格，{len(parsed_data['bias_values'])} 個偏壓點，{scan_direction} 掃描")
             return result
             
         except Exception as e:
@@ -265,3 +283,64 @@ class DatParser:
             
         except Exception as e:
             raise ValueError(f"處理 STS 數據失敗: {e}")
+    
+    def _determine_scan_direction(self, header_info, dat_info, grid_x, grid_y):
+        """判斷 CITS 掃描方向"""
+        try:
+            x_coords = header_info['x_coords']
+            y_coords = header_info['y_coords']
+            
+            # 取得起始點和終點
+            x_start, y_start = x_coords[0], y_coords[0]
+            x_end, y_end = x_coords[-1], y_coords[-1]
+            
+            # 獲取實驗參數
+            angle = dat_info.get('angle', 0)
+            x_center = dat_info.get('x_center', 0)
+            y_center = dat_info.get('y_center', 0)
+            
+            self.logger.debug(f"原始座標: 起始點({x_start:.3f}, {y_start:.3f}), 終點({x_end:.3f}, {y_end:.3f})")
+            self.logger.debug(f"實驗參數: 角度={angle}°, 中心({x_center:.3f}, {y_center:.3f})")
+            
+            # 座標旋轉正規化
+            x_start_rot, y_start_rot = self._rotate_coordinates(
+                x_start, y_start, x_center, y_center, angle
+            )
+            x_end_rot, y_end_rot = self._rotate_coordinates(
+                x_end, y_end, x_center, y_center, angle
+            )
+            
+            # 計算掃描方向向量
+            scan_direction_y = y_end_rot - y_start_rot
+            scan_direction_x = x_end_rot - x_start_rot
+            
+            self.logger.debug(f"旋轉後座標: 起始點({x_start_rot:.3f}, {y_start_rot:.3f}), 終點({x_end_rot:.3f}, {y_end_rot:.3f})")
+            self.logger.debug(f"掃描方向向量: dx={scan_direction_x:.3f}, dy={scan_direction_y:.3f}")
+            
+            # 判斷掃描方向（只根據Y方向判斷，與Qt版本一致）
+            if scan_direction_y > 0:
+                direction = 'upward'  # 終點Y比起始點高，由下往上掃
+            else:
+                direction = 'downward'  # 終點Y比起始點低，由上往下掃
+                
+            self.logger.info(f"掃描方向判斷結果: {direction}")
+            return direction
+            
+        except Exception as e:
+            self.logger.warning(f"掃描方向判斷失敗，使用預設值 'downward': {e}")
+            return 'downward'
+
+    def _rotate_coordinates(self, x, y, x_center, y_center, angle):
+        """座標旋轉工具函數"""
+        import math
+        
+        # 平移到原點
+        x_shift = x - x_center
+        y_shift = y - y_center
+        
+        # 旋轉（負角度，順時針回轉）
+        angle_rad = math.radians(-angle)
+        x_rot = math.cos(angle_rad) * x_shift - math.sin(angle_rad) * y_shift
+        y_rot = math.sin(angle_rad) * x_shift + math.cos(angle_rad) * y_shift
+        
+        return x_rot, y_rot
