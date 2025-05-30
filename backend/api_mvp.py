@@ -485,8 +485,11 @@ class SPMAnalyzerMVP:
             # 轉換 matplotlib colormap 到 Plotly 格式
             plotly_colormap = self._matplotlib_to_plotly_colorscale(mpl_cmap_name, reverse=reverse)
             
+            # 翻轉數據以適應 Plotly 的座標系統 (讓圖像像 matplotlib 一樣顯示)
+            flipped_data = np.flipud(raw_data)
+            
             # 計算 Z 值範圍
-            z_data = raw_data.tolist()
+            z_data = flipped_data.tolist()
             flat_z = [val for row in z_data for val in row]
             z_min = min(flat_z)
             z_max = max(flat_z)
@@ -760,9 +763,6 @@ class SPMAnalyzerMVP:
             
             # 應用比例因子
             image_data = image_data * scale
-            
-            # 上下翻轉
-            image_data = np.flipud(image_data)
             
             logger.info(f"INT 檔案解析完成，數據形狀: {image_data.shape}")
             return image_data
