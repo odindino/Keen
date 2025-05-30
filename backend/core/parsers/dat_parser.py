@@ -220,13 +220,14 @@ class DatParser:
             
             # 重塑量測數據為 (n_bias, grid_y, grid_x)
             measurement_data = parsed_data['measurement_data'][:, :actual_points]
-            
+               
             try:
                 data_3d = measurement_data.reshape(
                     parsed_data['n_bias_points'], grid_y, grid_x
                 )
             except ValueError as e:
                 raise ValueError(f"無法重塑測量數據為 3D 陣列: {e}")
+            
             
             result = {
                 'measurement_mode': 'CITS',
