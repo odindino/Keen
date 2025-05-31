@@ -7,7 +7,7 @@
           <h1 class="text-2xl font-bold text-gray-800">SPM 數據分析器 V2 (MVP)</h1>
           <div class="flex items-center space-x-4">
             <div v-if="currentData" class="text-sm text-gray-600">
-              已載入: {{ currentData.name }}
+              已載入: {{ currentData.filename }}
             </div>
             <div class="text-xs text-gray-500 bg-blue-100 px-2 py-1 rounded">
               MVP 版本
@@ -36,6 +36,11 @@
         <!-- 剖面圖表區域 - 佔右側，只在剖面模式時顯示 -->
         <div v-if="isProfileMode" class="w-2/5 p-4 border-l">
           <ProfileChart />
+        </div>
+        
+        <!-- CITS 線段分析區域 - 佔右側，只在 CITS 線段模式時顯示 -->
+        <div v-if="isCitsLineMode" class="w-2/5 p-4 border-l">
+          <CitsLineAnalysis />
         </div>
       </section>
     </main>
@@ -84,6 +89,7 @@ import { computed } from 'vue'
 import ControlPanel from './components/mvp/ControlPanel.vue'
 import TopoViewer from './components/mvp/TopoViewer.vue'
 import ProfileChart from './components/mvp/ProfileChart.vue'
+import CitsLineAnalysis from './components/mvp/CitsLineAnalysis.vue'
 import mvpStore from './stores/mvpStore'
 
 // 從 store 獲取狀態
@@ -91,6 +97,7 @@ const currentData = computed(() => mvpStore.currentData)
 const isLoading = computed(() => mvpStore.isLoading)
 const error = computed(() => mvpStore.error)
 const isProfileMode = computed(() => mvpStore.isProfileMode)
+const isCitsLineMode = computed(() => mvpStore.isCitsLineMode)
 
 // 清除錯誤
 function clearError() {

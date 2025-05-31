@@ -39,6 +39,7 @@ class SPMAnalyzerMVP:
         # 新增：CITS 數據相關
         self.current_cits_data = None  # 存儲完整的 CITS 3D 數據
         self.current_cits_metadata = None  # 存儲 CITS 元數據
+        self.current_cits_sts_data = None  # 緩存當前的 STS 線段分析數據
         
         logger.info("SPM 分析器 MVP 初始化完成")
     
@@ -1230,4 +1231,248 @@ class SPMAnalyzerMVP:
             
         except Exception as e:
             logger.error(f"獲取 CITS 偏壓資訊失敗: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def calculate_cits_line_profile(self, start_point, end_point, interpolation_method='linear'):
+        """
+        計算 CITS 線段剖面的 STS 光譜數據
+        
+        Args:
+            start_point: 起始點座標 [x, y] (物理單位)
+            end_point: 終止點座標 [x, y] (物理單位)
+            interpolation_method: 插值方法 ('linear', 'nearest', 'cubic')
+            
+        Returns:
+            dict: 包含 STS 剖面數據的字典
+        """
+        try:
+            if not hasattr(self, 'current_cits_data') or self.current_cits_data is None:
+                return {"success": False, "error": "無 CITS 數據"}
+            
+            if not hasattr(self, 'current_cits_metadata') or self.current_cits_metadata is None:
+                return {"success": False, "error": "無 CITS 元數據"}
+            
+            logger.info(f"開始計算 CITS 線段剖面: {start_point} -> {end_point}")
+            
+            # 導入 CITS 分析模塊
+            from core.analysis.cits_analysis import CITSAnalysis
+            
+            # 將物理座標轉換為像素座標
+            meta = self.current_cits_metadata
+            data_3d = self.current_cits_data['data_3d']
+            bias_values = self.current_cits_data['bias_values']
+            
+            # 從物理坐標轉換到像素坐標 
+            # 注意：這裡假設坐標原點在左下角，需要進行 Y 軸翻轉
+            grid_height, grid_width = data_3d.shape[1], data_3d.shape[2]
+            
+            # 將物理坐標映射到像素坐標
+            pixel_start = [
+                int((meta['y_range'] - start_point[1]) * grid_height / meta['y_range']),  # y -> row (翻轉)
+                int(start_point[0] * grid_width / meta['x_range'])   # x -> col
+            ]
+            pixel_end = [
+                int((meta['y_range'] - end_point[1]) * grid_height / meta['y_range']),
+                int(end_point[0] * grid_width / meta['x_range'])
+            ]
+            
+            # 確保像素座標在有效範圍內
+            pixel_start[0] = max(0, min(pixel_start[0], grid_height - 1))
+            pixel_start[1] = max(0, min(pixel_start[1], grid_width - 1))
+            pixel_end[0] = max(0, min(pixel_end[0], grid_height - 1))
+            pixel_end[1] = max(0, min(pixel_end[1], grid_width - 1))
+            
+            # 計算物理長度
+            physical_length = np.sqrt(
+                (end_point[0] - start_point[0]) ** 2 + 
+                (end_point[1] - start_point[1]) ** 2
+            )
+            
+            logger.info(f"像素座標: {pixel_start} -> {pixel_end}, 物理長度: {physical_length:.3f} nm")
+            
+            # 使用 CITSAnalysis 提取線段 STS 光譜
+            sts_data = CITSAnalysis.extract_line_sts_spectra(
+                data_3d=data_3d,
+                pixel_start=pixel_start,
+                pixel_end=pixel_end,
+                bias_values=bias_values,
+                physical_length=physical_length,
+                interpolation_method=interpolation_method
+            )
+            
+            logger.info(f"CITS 線段剖面計算成功: {sts_data['n_positions']} 個位置，{sts_data['n_bias']} 個偏壓點")
+            
+            # 緩存完整的 STS 數據（包含 numpy 陣列）到實例變數
+            self.current_cits_sts_data = sts_data
+            
+            # 返回序列化友好的數據給前端
+            serializable_data = {
+                'line_positions': sts_data['line_positions'],
+                'bias_values': sts_data['bias_values'],
+                'sts_spectra': sts_data['sts_spectra'],
+                'line_length': sts_data['line_length'],
+                'n_positions': sts_data['n_positions'],
+                'n_bias': sts_data['n_bias'],
+                'interpolation_method': sts_data['interpolation_method'],
+                'pixel_coordinates': sts_data['pixel_coordinates'],
+                'statistics': sts_data['statistics']
+            }
+            
+            return {
+                "success": True,
+                "sts_data": serializable_data,
+                "start_point": start_point,
+                "end_point": end_point,
+                "physical_length": float(physical_length),
+                "interpolation_method": interpolation_method
+            }
+            
+        except Exception as e:
+            logger.error(f"計算 CITS 線段剖面失敗: {str(e)}")
+            import traceback
+            logger.error(f"詳細錯誤: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
+    
+    def generate_cits_evolution_plot(self, sts_data, colormap='RdBu_r'):
+        """
+        生成 STS Evolution 圖的 Plotly 配置
+        
+        Args:
+            sts_data: 從 calculate_cits_line_profile 返回的 STS 數據
+            colormap: 色彩映射方案
+            
+        Returns:
+            dict: Plotly 圖表配置
+        """
+        try:
+            # 檢查是否有緩存的完整 STS 數據
+            if not self.current_cits_sts_data:
+                return {"success": False, "error": "沒有可用的 STS 數據，請先計算線段剖面"}
+            
+            logger.info("生成 STS Evolution 圖")
+            
+            from core.analysis.cits_analysis import CITSAnalysis
+            
+            # 使用緩存的完整數據
+            cached_data = self.current_cits_sts_data
+            
+            # 生成 Evolution 圖數據，使用緩存中的 numpy 陣列
+            evolution_config = CITSAnalysis.generate_sts_evolution_data(
+                line_positions=cached_data['line_positions'],
+                bias_values=cached_data['bias_values'],
+                sts_spectra_array=cached_data['_sts_spectra_array'],  # 使用緩存的 numpy 陣列
+                colormap=colormap
+            )
+            
+            logger.info("STS Evolution 圖生成成功")
+            
+            return {
+                "success": True,
+                "plot_config": evolution_config,
+                "plot_type": "evolution"
+            }
+            
+        except Exception as e:
+            logger.error(f"生成 STS Evolution 圖失敗: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def generate_cits_overlay_plot(self, sts_data, selected_positions=None, normalize=False):
+        """
+        生成 STS 曲線疊加圖的 Plotly 配置
+        
+        Args:
+            sts_data: 從 calculate_cits_line_profile 返回的 STS 數據
+            selected_positions: 選擇顯示的位置索引列表，None 則自動選擇
+            normalize: 是否標準化曲線
+            
+        Returns:
+            dict: Plotly 圖表配置
+        """
+        try:
+            # 檢查是否有緩存的完整 STS 數據
+            if not self.current_cits_sts_data:
+                return {"success": False, "error": "沒有可用的 STS 數據，請先計算線段剖面"}
+            
+            logger.info("生成 STS 曲線疊加圖")
+            
+            from core.analysis.cits_analysis import CITSAnalysis
+            
+            # 使用緩存的完整數據
+            cached_data = self.current_cits_sts_data
+            
+            # 生成疊加圖數據，使用緩存中的 numpy 陣列
+            overlay_config = CITSAnalysis.generate_sts_overlay_data(
+                line_positions=cached_data['line_positions'],
+                bias_values=cached_data['bias_values'],
+                sts_spectra_array=cached_data['_sts_spectra_array'],  # 使用緩存的 numpy 陣列
+                selected_positions=selected_positions,
+                normalize=normalize
+            )
+            
+            logger.info(f"STS 曲線疊加圖生成成功，包含 {len(overlay_config['data'])} 條曲線")
+            
+            return {
+                "success": True,
+                "plot_config": overlay_config,
+                "plot_type": "overlay",
+                "normalize": normalize,
+                "selected_positions": selected_positions
+            }
+            
+        except Exception as e:
+            logger.error(f"生成 STS 曲線疊加圖失敗: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def apply_cits_energy_alignment(self, sts_data, alignment_method='zero_crossing', reference_position=None):
+        """
+        應用能帶對齊到 STS 光譜
+        
+        Args:
+            sts_data: 從 calculate_cits_line_profile 返回的 STS 數據
+            alignment_method: 對齊方法 ('zero_crossing', 'peak', 'manual')
+            reference_position: 參考位置索引，None 則使用中間位置
+            
+        Returns:
+            dict: 包含對齊結果的字典
+        """
+        try:
+            # 檢查是否有緩存的 STS 數據
+            if not hasattr(self, 'current_cits_sts_data') or self.current_cits_sts_data is None:
+                return {"success": False, "error": "未找到 CITS STS 數據，請先執行線段分析"}
+            
+            if not sts_data or 'sts_data' not in sts_data:
+                return {"success": False, "error": "無效的 STS 數據"}
+            
+            logger.info(f"應用能帶對齊: {alignment_method}")
+            
+            from core.analysis.cits_analysis import CITSAnalysis
+            
+            data = sts_data['sts_data']
+            cached_data = self.current_cits_sts_data
+            
+            # 使用緩存的 numpy 數組進行對齊分析
+            aligned_spectra, energy_shifts = CITSAnalysis.apply_energy_alignment(
+                sts_spectra_array=cached_data['_sts_spectra_array'],
+                bias_values=np.array(data['bias_values']),
+                alignment_method=alignment_method,
+                reference_position=reference_position
+            )
+            
+            logger.info(f"能帶對齊完成，偏移範圍: {np.min(energy_shifts):.2f} ~ {np.max(energy_shifts):.2f} mV")
+            
+            return {
+                "success": True,
+                "energy_shifts": energy_shifts.tolist(),
+                "alignment_method": alignment_method,
+                "reference_position": reference_position if reference_position is not None else len(energy_shifts) // 2,
+                "shift_statistics": {
+                    "min": float(np.min(energy_shifts)),
+                    "max": float(np.max(energy_shifts)),
+                    "mean": float(np.mean(energy_shifts)),
+                    "std": float(np.std(energy_shifts))
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"應用能帶對齊失敗: {str(e)}")
             return {"success": False, "error": str(e)}

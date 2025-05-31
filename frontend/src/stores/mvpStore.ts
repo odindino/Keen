@@ -86,6 +86,31 @@ export interface CitsBiasInfo {
   currentBias: number
 }
 
+export interface CitsLineProfile {
+  startPoint: ProfilePoint
+  endPoint: ProfilePoint
+  stsData: any
+  physicalLength: number
+  interpolationMethod: string
+  isActive: boolean
+}
+
+export interface CitsAnalysisData {
+  evolutionPlot?: any
+  overlayPlot?: any
+  energyAlignment?: {
+    shifts: number[]
+    method: string
+    referencePosition: number
+    statistics: {
+      min: number
+      max: number
+      mean: number
+      std: number
+    }
+  }
+}
+
 export const mvpStore = reactive({
   currentData: null as SPMData | null,
   isLoading: false,
@@ -103,6 +128,11 @@ export const mvpStore = reactive({
   
   citsData: null as CitsBiasInfo | null,
   isCitsMode: false,
+  
+  // CITS 線段分析相關狀態
+  isCitsLineMode: false,
+  citsLineProfile: null as CitsLineProfile | null,
+  citsAnalysisData: null as CitsAnalysisData | null,
   
   setLoading(loading: boolean) {
     this.isLoading = loading
@@ -247,6 +277,50 @@ export const mvpStore = reactive({
     this.isProfileMode = false
     this.exitFileSelectionMode()
     this.setCitsData(null)
+    this.resetCitsLineData()
+  },
+
+  // CITS 線段分析相關方法
+  toggleCitsLineMode() {
+    this.isCitsLineMode = !this.isCitsLineMode
+    if (!this.isCitsLineMode) {
+      this.resetCitsLineData()
+    }
+  },
+
+  resetCitsLineData() {
+    this.isCitsLineMode = false
+    this.citsLineProfile = null
+    this.citsAnalysisData = null
+  },
+
+  setCitsLineProfile(profile: CitsLineProfile | null) {
+    this.citsLineProfile = profile
+  },
+
+  setCitsAnalysisData(data: CitsAnalysisData | null) {
+    this.citsAnalysisData = data
+  },
+
+  updateCitsEvolutionPlot(plotConfig: any) {
+    if (!this.citsAnalysisData) {
+      this.citsAnalysisData = {}
+    }
+    this.citsAnalysisData.evolutionPlot = plotConfig
+  },
+
+  updateCitsOverlayPlot(plotConfig: any) {
+    if (!this.citsAnalysisData) {
+      this.citsAnalysisData = {}
+    }
+    this.citsAnalysisData.overlayPlot = plotConfig
+  },
+
+  updateCitsEnergyAlignment(alignmentData: any) {
+    if (!this.citsAnalysisData) {
+      this.citsAnalysisData = {}
+    }
+    this.citsAnalysisData.energyAlignment = alignmentData
   }
 })
 

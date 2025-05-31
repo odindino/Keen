@@ -36,7 +36,7 @@
       <!-- 標題欄 -->
       <header class="px-4 py-3 border-b bg-gray-50 flex-shrink-0">
         <div class="flex items-center justify-between">
-          <h3 class="font-medium text-gray-800">{{ currentData.name }}</h3>
+          <h3 class="font-medium text-gray-800">{{ currentData.filename }}</h3>
           <div class="text-sm text-gray-600">
             色彩映射: {{ currentData.colormap }}
           </div>
@@ -72,6 +72,11 @@ const profileStartPoint = computed(() => mvpStore.profileStartPoint)
 const profileCurrentPoint = computed(() => mvpStore.profileCurrentPoint)
 const profileEndPoint = computed(() => mvpStore.profileEndPoint)
 
+// CITS 線段分析相關狀態
+const isCitsLineMode = computed(() => mvpStore.isCitsLineMode)
+const citsLineProfile = computed(() => mvpStore.citsLineProfile)
+const isCitsMode = computed(() => mvpStore.isCitsMode)
+
 // 監聽數據變化
 watch(currentData, async (newData) => {
   if (newData && newData.plotlyConfig) {
@@ -96,10 +101,25 @@ watch(isProfileMode, () => {
   }
 })
 
+// 監聽 CITS 線段模式變化
+watch(isCitsLineMode, () => {
+  if (!isCitsLineMode.value) {
+    // 退出 CITS 線段模式時，清除線段並重新繪製圖表
+    updatePlotWithCitsLine()
+  }
+})
+
 // 監聽剖面點變化
 watch([profileStartPoint, profileCurrentPoint, profileEndPoint], () => {
   if (isProfileMode.value) {
     updatePlotWithProfile()
+  }
+})
+
+// 監聽 CITS 線段變化
+watch([citsLineProfile], () => {
+  if (isCitsLineMode.value) {
+    updatePlotWithCitsLine()
   }
 })
 
@@ -202,13 +222,145 @@ function updatePlotWithProfile() {
   Plotly.react(plotlyInstance, plotData, originalConfig.layout, originalConfig.config)
 }
 
+// 更新圖表並添加 CITS 線段
+function updatePlotWithCitsLine() {
+  if (!plotlyInstance || !currentData.value) return
+
+  const originalConfig = currentData.value.plotlyConfig
+  if (!originalConfig) return
+
+  // 複製原始數據
+  const plotData = [...originalConfig.data]
+
+  // 添加 CITS 線段（如果在線段模式中）
+  if (isCitsLineMode.value && citsLineProfile.value) {
+    const profile = citsLineProfile.value
+    
+    plotData.push({
+      x: [profile.startPoint.x, profile.endPoint.x],
+      y: [profile.startPoint.y, profile.endPoint.y],
+      mode: 'lines+markers',
+      type: 'scatter',
+      line: {
+        color: 'yellow',
+        width: 3
+      },
+      marker: {
+        color: ['orange', 'orange'],
+        size: 8,
+        symbol: 'circle'
+      },
+      name: 'CITS 線段分析',
+      showlegend: false,
+      hoverinfo: 'skip'
+    })
+  }
+
+  // 更新圖表
+  Plotly.react(plotlyInstance, plotData, originalConfig.layout, originalConfig.config)
+}
+
+// 處理 CITS 線段分析點擊
+async function handleCitsLineClick(x: number, y: number) {
+  // 如果還沒有起點，設置起點
+  if (!citsLineProfile.value) {
+    console.log('MVP TopoViewer: 設置 CITS 線段起點:', { x, y })
+    mvpStore.setCitsLineProfile({
+      startPoint: { x, y },
+      endPoint: { x, y },
+      stsData: null,
+      physicalLength: 0,
+      interpolationMethod: 'linear',
+      isActive: false
+    })
+  } 
+  // 如果已有起點，設置終點並計算 CITS 線段數據
+  else {
+    console.log('MVP TopoViewer: 設置 CITS 線段終點:', { x, y })
+    
+    try {
+      console.log('MVP TopoViewer: 開始計算 CITS 線段數據...')
+      const api = window.pywebview.api as any
+      const result = await api.calculate_cits_line_profile(
+        [citsLineProfile.value.startPoint.x, citsLineProfile.value.startPoint.y],
+        [x, y],
+        'linear' // 默認插值方法
+      )
+      
+      if (result.success) {
+        // 更新線段配置
+        mvpStore.setCitsLineProfile({
+          startPoint: citsLineProfile.value.startPoint,
+          endPoint: { x, y },
+          stsData: result.profile_data,
+          physicalLength: result.profile_data.physical_length,
+          interpolationMethod: 'linear',
+          isActive: true
+        })
+        console.log('MVP TopoViewer: CITS 線段計算成功:', result.profile_data)
+      } else {
+        console.error('MVP TopoViewer: CITS 線段計算失敗:', result.error)
+        mvpStore.setError('CITS 線段計算失敗: ' + result.error)
+      }
+    } catch (error) {
+      console.error('MVP TopoViewer: 調用 CITS 線段 API 失敗:', error)
+      mvpStore.setError('調用 CITS 線段 API 失敗')
+    }
+  }
+}
+
+// 處理高度剖面點擊
+async function handleProfileClick(x: number, y: number) {
+  // 如果還沒有起點，設置起點
+  if (!profileStartPoint.value) {
+    mvpStore.setProfileStartPoint({ x, y })
+  } 
+  // 如果已有起點但沒有終點，設置終點並計算剖面
+  else if (!profileEndPoint.value) {
+    mvpStore.setProfileEndPoint({ x, y })
+    
+    // 調用後端 API 計算剖面數據
+    try {
+      console.log('MVP TopoViewer: 開始計算剖面數據...')
+      const api = window.pywebview.api as any
+      const result = await api.calculate_height_profile(
+        [profileStartPoint.value.x, profileStartPoint.value.y],
+        [x, y]
+      )
+      
+      if (result.success) {
+        // 最終確認的剖面，清除預覽標記，並添加起點終點資訊
+        const finalData = { 
+          ...result.profile_data, 
+          isPreview: false,
+          startPoint: profileStartPoint.value,
+          endPoint: { x, y }
+        }
+        mvpStore.setProfileData(finalData)
+        console.log('MVP TopoViewer: 剖面計算成功:', result.profile_data)
+      } else {
+        console.error('MVP TopoViewer: 剖面計算失敗:', result.error)
+        mvpStore.setError('剖面計算失敗: ' + result.error)
+      }
+    } catch (error) {
+      console.error('MVP TopoViewer: 調用剖面 API 失敗:', error)
+      mvpStore.setError('調用剖面 API 失敗')
+    }
+  }
+  // 如果已經有終點，則清除現有數據並設置新的起點
+  else {
+    mvpStore.resetProfileData()
+    mvpStore.setProfileStartPoint({ x, y })
+  }
+}
+
 // 設置滑鼠事件處理
 function setupEventHandlers() {
   if (!plotlyInstance) return
   
   // 監聽左鍵點擊事件
   plotlyInstance.on('plotly_click', async (eventData: any) => {
-    if (!isProfileMode.value || !eventData.points || eventData.points.length === 0) return
+    if (!eventData.points || eventData.points.length === 0) return
     
     // 獲取點擊的點的數據座標
     const point = eventData.points[0]
@@ -217,47 +369,16 @@ function setupEventHandlers() {
     
     console.log('MVP TopoViewer: 點擊座標:', { x, y })
     
-    // 如果還沒有起點，設置起點
-    if (!profileStartPoint.value) {
-      mvpStore.setProfileStartPoint({ x, y })
-    } 
-    // 如果已有起點但沒有終點，設置終點並計算剖面
-    else if (!profileEndPoint.value) {
-      mvpStore.setProfileEndPoint({ x, y })
-      
-      // 調用後端 API 計算剖面數據
-      try {
-        console.log('MVP TopoViewer: 開始計算剖面數據...')
-        // 使用類型斷言來解決 TypeScript 錯誤
-        const api = window.pywebview.api as any;
-        const result = await api.calculate_height_profile(
-          [profileStartPoint.value.x, profileStartPoint.value.y],
-          [x, y]
-        )
-        
-        if (result.success) {
-          // 最終確認的剖面，清除預覽標記，並添加起點終點資訊
-          const finalData = { 
-            ...result.profile_data, 
-            isPreview: false,
-            startPoint: profileStartPoint.value,
-            endPoint: { x, y }
-          }
-          mvpStore.setProfileData(finalData)
-          console.log('MVP TopoViewer: 剖面計算成功:', result.profile_data)
-        } else {
-          console.error('MVP TopoViewer: 剖面計算失敗:', result.error)
-          mvpStore.setError('剖面計算失敗: ' + result.error)
-        }
-      } catch (error) {
-        console.error('MVP TopoViewer: 調用剖面 API 失敗:', error)
-        mvpStore.setError('調用剖面 API 失敗')
-      }
+    // 處理 CITS 線段分析模式
+    if (isCitsLineMode.value && isCitsMode.value) {
+      await handleCitsLineClick(x, y)
+      return
     }
-    // 如果已經有終點，則清除現有數據並設置新的起點
-    else {
-      mvpStore.resetProfileData()
-      mvpStore.setProfileStartPoint({ x, y })
+    
+    // 處理高度剖面模式
+    if (isProfileMode.value) {
+      await handleProfileClick(x, y)
+      return
     }
   })
   
@@ -316,7 +437,7 @@ async function updateColormap(newColormap: string) {
     // 調用後端 API 更新色彩映射
     const result = await window.pywebview.api.update_colormap(
       currentData.value.txtFile,
-      currentData.value.intFile,
+      currentData.value.intFile || '',
       newColormap
     )
 

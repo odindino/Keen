@@ -202,6 +202,156 @@ export async function getCitsBiasInfo(): Promise<{
   }
 }
 
+/**
+ * 計算 CITS 線段剖面的 STS 光譜數據
+ */
+export async function calculateCitsLineProfile(
+  startPoint: [number, number], 
+  endPoint: [number, number], 
+  interpolationMethod: string = 'linear'
+): Promise<{
+  success: boolean
+  sts_data?: any
+  start_point?: [number, number]
+  end_point?: [number, number]
+  physical_length?: number
+  interpolation_method?: string
+  error?: string
+}> {
+  try {
+    console.log('API Service: 計算 CITS 線段剖面:', startPoint, '->', endPoint)
+    
+    const result = await window.pywebview.api.calculate_cits_line_profile(
+      startPoint, 
+      endPoint, 
+      interpolationMethod
+    )
+    
+    if (!result.success) {
+      throw new Error(result.error || '計算 CITS 線段剖面失敗')
+    }
+
+    console.log('API Service: CITS 線段剖面計算成功')
+    return result
+    
+  } catch (error) {
+    console.error('API Service: 計算 CITS 線段剖面失敗:', error)
+    throw error
+  }
+}
+
+/**
+ * 生成 STS Evolution 圖
+ */
+export async function generateCitsEvolutionPlot(
+  stsData: any, 
+  colormap: string = 'RdBu_r'
+): Promise<{
+  success: boolean
+  plot_config?: any
+  plot_type?: string
+  error?: string
+}> {
+  try {
+    console.log('API Service: 生成 STS Evolution 圖')
+    
+    const result = await window.pywebview.api.generate_cits_evolution_plot(
+      stsData, 
+      colormap
+    )
+    
+    if (!result.success) {
+      throw new Error(result.error || '生成 STS Evolution 圖失敗')
+    }
+
+    console.log('API Service: STS Evolution 圖生成成功')
+    return result
+    
+  } catch (error) {
+    console.error('API Service: 生成 STS Evolution 圖失敗:', error)
+    throw error
+  }
+}
+
+/**
+ * 生成 STS 曲線疊加圖
+ */
+export async function generateCitsOverlayPlot(
+  stsData: any, 
+  selectedPositions?: number[], 
+  normalize: boolean = false
+): Promise<{
+  success: boolean
+  plot_config?: any
+  plot_type?: string
+  normalize?: boolean
+  selected_positions?: number[]
+  error?: string
+}> {
+  try {
+    console.log('API Service: 生成 STS 曲線疊加圖')
+    
+    const result = await window.pywebview.api.generate_cits_overlay_plot(
+      stsData, 
+      selectedPositions, 
+      normalize
+    )
+    
+    if (!result.success) {
+      throw new Error(result.error || '生成 STS 曲線疊加圖失敗')
+    }
+
+    console.log('API Service: STS 曲線疊加圖生成成功')
+    return result
+    
+  } catch (error) {
+    console.error('API Service: 生成 STS 曲線疊加圖失敗:', error)
+    throw error
+  }
+}
+
+/**
+ * 應用能帶對齊
+ */
+export async function applyCitsEnergyAlignment(
+  stsData: any, 
+  alignmentMethod: string = 'zero_crossing', 
+  referencePosition?: number
+): Promise<{
+  success: boolean
+  energy_shifts?: number[]
+  alignment_method?: string
+  reference_position?: number
+  shift_statistics?: {
+    min: number
+    max: number
+    mean: number
+    std: number
+  }
+  error?: string
+}> {
+  try {
+    console.log('API Service: 應用能帶對齊:', alignmentMethod)
+    
+    const result = await window.pywebview.api.apply_cits_energy_alignment(
+      stsData, 
+      alignmentMethod, 
+      referencePosition
+    )
+    
+    if (!result.success) {
+      throw new Error(result.error || '應用能帶對齊失敗')
+    }
+
+    console.log('API Service: 能帶對齊應用成功')
+    return result
+    
+  } catch (error) {
+    console.error('API Service: 應用能帶對齊失敗:', error)
+    throw error
+  }
+}
+
 // 工具函數
 function generateId(): string {
   return `spm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -352,6 +502,57 @@ declare global {
           min_bias?: number
           max_bias?: number
           current_bias?: number
+          error?: string
+        }>
+        calculate_cits_line_profile(
+          start_point: [number, number], 
+          end_point: [number, number], 
+          interpolation_method?: string
+        ): Promise<{
+          success: boolean
+          sts_data?: any
+          start_point?: [number, number]
+          end_point?: [number, number]
+          physical_length?: number
+          interpolation_method?: string
+          error?: string
+        }>
+        generate_cits_evolution_plot(
+          sts_data: any, 
+          colormap?: string
+        ): Promise<{
+          success: boolean
+          plot_config?: any
+          plot_type?: string
+          error?: string
+        }>
+        generate_cits_overlay_plot(
+          sts_data: any, 
+          selected_positions?: number[], 
+          normalize?: boolean
+        ): Promise<{
+          success: boolean
+          plot_config?: any
+          plot_type?: string
+          normalize?: boolean
+          selected_positions?: number[]
+          error?: string
+        }>
+        apply_cits_energy_alignment(
+          sts_data: any, 
+          alignment_method?: string, 
+          reference_position?: number
+        ): Promise<{
+          success: boolean
+          energy_shifts?: number[]
+          alignment_method?: string
+          reference_position?: number
+          shift_statistics?: {
+            min: number
+            max: number
+            mean: number
+            std: number
+          }
           error?: string
         }>
       }

@@ -124,6 +124,43 @@
             </div>
           </div>
         </div>
+
+        <!-- CITS 線段分析按鈕 (只在 CITS 模式下顯示) -->
+        <button 
+          v-if="isCitsMode"
+          @click="toggleCitsLineMode"
+          :class="[
+            'w-full py-3 px-4 font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2',
+            isCitsLineMode 
+              ? 'bg-orange-600 hover:bg-orange-700 text-white focus:ring-orange-500'
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-800 focus:ring-gray-400'
+          ]"
+        >
+          <div class="flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            {{ isCitsLineMode ? '退出 CITS 線段分析' : '啟動 CITS 線段分析' }}
+          </div>
+        </button>
+        
+        <!-- CITS 線段分析模式提示 -->
+        <div v-if="isCitsLineMode" class="text-sm text-orange-600 bg-orange-50 p-3 rounded-lg border border-orange-200">
+          <div class="flex items-start">
+            <svg class="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+            <div>
+              <p class="font-medium mb-1">CITS 線段分析模式已啟動</p>
+              <ul class="text-xs space-y-1">
+                <li>• 在 CITS 圖像上點擊選擇起點</li>
+                <li>• 再次點擊選擇終點</li>
+                <li>• 系統將提取線段上的 STS 數據</li>
+                <li>• 可生成 STS Evolution 和疊加圖</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -393,6 +430,8 @@ import { loadSPMFile, loadTxtFile, loadSelectedFile as loadSelectedFileAPI } fro
 const currentData = computed(() => mvpStore.currentData)
 const isLoading = computed(() => mvpStore.isLoading)
 const isProfileMode = computed(() => mvpStore.isProfileMode)
+const isCitsMode = computed(() => mvpStore.isCitsMode)
+const isCitsLineMode = computed(() => mvpStore.isCitsLineMode)
 
 // 文件選擇相關狀態
 const txtFileInfo = computed(() => mvpStore.txtFileInfo)
@@ -611,6 +650,12 @@ function formatNumber(value: number): string {
 // 切換高度剖面量測模式
 function toggleHeightProfileMode() {
   mvpStore.toggleProfileMode()
+}
+
+// 切換 CITS 線段分析模式
+function toggleCitsLineMode() {
+  mvpStore.toggleCitsLineMode()
+  console.log('MVP: CITS 線段分析模式切換至:', mvpStore.isCitsLineMode)
 }
 
 // 應用影像平面化
