@@ -343,13 +343,17 @@ class SPMAnalyzerMVP:
             
             # 將物理座標轉換為像素座標
             meta = self.current_metadata
+            
+            # **關鍵修正：由於 Plotly 顯示時 Y 軸被翻轉（np.flipud），需要對 Y 座標進行對應調整**
+            # 原始的 Y 座標轉換：y -> row
+            # 翻轉後的 Y 座標轉換：(y_range - y) -> row
             pixel_start = [
-                int(start_point[1] * meta['y_pixels'] / meta['y_range']),  # y -> row
+                int((meta['y_range'] - start_point[1]) * meta['y_pixels'] / meta['y_range']),  # y -> row (翻轉補償)
                 int(start_point[0] * meta['x_pixels'] / meta['x_range'])   # x -> col
             ]
             pixel_end = [
-                int(end_point[1] * meta['y_pixels'] / meta['y_range']),
-                int(end_point[0] * meta['x_pixels'] / meta['x_range'])
+                int((meta['y_range'] - end_point[1]) * meta['y_pixels'] / meta['y_range']),   # y -> row (翻轉補償)
+                int(end_point[0] * meta['x_pixels'] / meta['x_range'])     # x -> col
             ]
             
             # 計算物理單位的實際長度（歐式距離）
