@@ -206,19 +206,6 @@ class DatParser:
             x_coords = header_info['x_coords'][:actual_points]
             y_coords = header_info['y_coords'][:actual_points]
             
-            # 根據掃描方向調整數據（使用高效的 reshape + flip 方法）
-            if scan_direction == 'upward':
-                self.logger.info("檢測到 upward 掃描，正在翻轉數據...")
-                
-                # 使用 reshape + flip 方法翻轉測量數據（最高效）
-                measurement_data = measurement_data.reshape(-1, grid_y, grid_x)[:, ::-1, :].reshape(-1, grid_x * grid_y)
-                
-                # 同步翻轉座標（使用相同的高效方法）
-                coords_2d = np.column_stack([x_coords, y_coords]).reshape(grid_y, grid_x, 2)
-                coords_flipped = coords_2d[::-1, :, :].reshape(-1, 2)
-                x_coords = coords_flipped[:, 0]
-                y_coords = coords_flipped[:, 1]
-            
             # 重塑座標為2D網格
             try:
                 # 嘗試直接重塑
