@@ -22,6 +22,53 @@
 - **可測試性**：每個組件都可以獨立測試
 - **可重用性**：基礎功能可在不同場景中重複使用
 - **專業化**：針對 SPM 數據特性的專門優化
+- **國際化**：支援多語言開發環境，程式碼註解和文件提供正體中文和英文版本
+- **多平台支援**：目前主要支援 Anfatec Instruments AG SXM 系統，未來計劃擴展支援 Nanonis、Bruker、Asylum(Oxford)、Park System 等主流 SPM 系統
+
+### 多語言支援說明
+
+為確保國際化開發和維護，本專案採用雙語言支援策略：
+
+#### 程式碼註解規範
+- **類別和函數文檔字串**：提供正體中文和英文版本
+- **重要註解**：關鍵邏輯和算法使用雙語註解
+- **變數命名**：使用英文命名，配合中文註解說明
+
+#### 文件國際化
+- **架構文件**：提供正體中文版 (ARCHITECTURE.md) 和英文版 (ARCHITECTURE_EN.md)
+- **API 文件**：雙語言說明
+- **使用手冊**：支援多語言版本
+
+#### 範例格式
+```python
+class SPMAnalyzer:
+    """
+    SPM 數據分析器主類別
+    Main SPM data analyzer class
+    
+    這個類別負責協調所有的 SPM 數據分析流程
+    This class coordinates all SPM data analysis workflows
+    """
+    
+    def analyze_data(self, data: np.ndarray) -> AnalysisResult:
+        """
+        分析 SPM 數據
+        Analyze SPM data
+        
+        Args:
+            data: SPM 原始數據矩陣 / Raw SPM data matrix
+            
+        Returns:
+            分析結果 / Analysis results
+        """
+        # 數據預處理 / Data preprocessing
+        processed_data = self._preprocess(data)
+        
+        # 執行主要分析 / Execute main analysis
+        result = self._main_analysis(processed_data)
+        
+        return result
+```
 
 ## 核心理念
 
@@ -355,7 +402,7 @@ class LazyDataView:
     
     @property
     def shape(self):
-        """提供形狀信息而不觸發計算"""
+        """提供形狀訊息而不觸發計算"""
         # 實現形狀推斷邏輯
         pass
 ```
@@ -826,24 +873,51 @@ class CustomPlotting:
 
 ### 1. 環境配置
 
+#### Conda 環境配置 (environment.yml)
 ```yaml
 # environment.yml
-name: spm-analysis
+name: keen
 channels:
   - conda-forge
   - defaults
+  - anaconda
 dependencies:
-  - python=3.11
+  - python>=3.12
   - numpy>=1.24.0
+  - plotly>=5.17.0
   - scipy>=1.10.0
-  - matplotlib>=3.6.0
-  - numba>=0.57.0
-  - pytest>=7.0.0
-  - psutil>=5.9.0
+  - matplotlib>=3.7.0
+  - pandas>=2.0.0
   - pip
   - pip:
-    - plotly>=5.0.0
-    - dash>=2.0.0
+    # 開發工具 (可選，需要時取消註解)
+    - pytest>=7.4.0
+    - black>=23.0.0
+    - flake8>=6.0.0
+
+    # jupyter notebook 支持
+    - jupyterlab>=4.0.0
+    - ipykernel>=6.20.0
+```
+
+#### Pip 額外依賴 (requirements.txt)
+```pip-requirements
+pywebview>=4.4.0
+```
+
+#### 環境設置指令
+```bash
+# 創建 conda 環境
+conda env create -f environment.yml
+
+# 激活環境
+conda activate keen
+
+# 安裝額外依賴
+pip install -r requirements.txt
+
+# 開發模式安裝 (可選)
+pip install -e .
 ```
 
 ### 2. 性能監控
@@ -966,7 +1040,7 @@ def setup_logging(config: SystemConfig):
 
 ### 3. 錯誤處理
 - 使用具體的異常類型
-- 提供有用的錯誤信息
+- 提供有用的錯誤訊息
 - 實施優雅的錯誤恢復
 - 記錄所有錯誤事件
 
@@ -980,7 +1054,57 @@ def setup_logging(config: SystemConfig):
 
 ## 總結
 
+## 結論
+
 本架構設計提供了一個可持續、可擴展的 SPM 數據分析解決方案。通過清晰的職責分離、智能的資源管理和完善的測試策略，確保系統在處理複雜 SPM 數據時既高效又可靠。
+
+### 開發路線圖
+
+1. **實施核心基礎架構**
+   - 基本分析器框架
+   - 數學庫基礎
+   - 快取系統
+
+2. **創建基本的測試套件**
+   - 數學函數單元測試
+   - 分析器集成測試
+   - 性能基準測試
+
+3. **開發專門分析器**
+   - CITS 分析器
+   - STS 分析器
+   - 地形分析器
+
+4. **增強視覺化功能**
+   - 互動式繪圖
+   - 分析儀表板
+   - 匯出功能
+
+5. **優化和部署**
+   - 性能調優
+   - 記憶體優化
+   - 生產部署
+
+### 國際化開發支援
+
+本框架特別注重國際化開發環境：
+
+#### 文件語言支援
+- **架構文件**：提供 [正體中文版](ARCHITECTURE.md) 和 [英文版](ARCHITECTURE_EN.md)
+- **API 文件**：所有公開 API 都有雙語描述
+- **開發指南**：提供詳細的 [雙語言開發規範](DEVELOPER_GUIDE.md)
+
+#### 程式碼國際化
+- **函數與類別**：所有公開接口都有中英文文檔字串
+- **註解標準**：重要邏輯使用雙語註解，參考 [程式碼範例](core/examples/bilingual_code_example.py)
+- **錯誤訊息**：提供多語言錯誤描述
+
+#### 開發者資源
+- **[開發者指南](DEVELOPER_GUIDE.md)**：詳細的雙語言開發規範和最佳實踐
+- **[程式碼範例](core/examples/bilingual_code_example.py)**：展示如何撰寫符合規範的雙語註解
+- **貢獻流程**：支援不同語言背景的開發者參與
+
+這種設計確保無論開發者的語言背景如何，都能有效參與專案的開發和維護工作。
 
 開發者應按照本文件的指導原則進行開發，確保系統的一致性和可維護性。隨著需求的變化，可以通過添加新的分析器、數學函數或視覺化組件來擴展系統功能。
 
