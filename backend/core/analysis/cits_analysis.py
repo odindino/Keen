@@ -6,9 +6,11 @@ CITS (Current Imaging Tunneling Spectroscopy) 數據分析模組
 - STS evolution 分析
 - Band alignment 工具
 - 數據插值和處理
+- 偏壓模式檢測與切割
+- 能譜圖和能帶圖生成
 
 作者: KEEN 開發團隊
-日期: 2025-05-31
+日期: 2025-06-05
 """
 
 import numpy as np
@@ -16,6 +18,8 @@ import logging
 from typing import List, Tuple, Dict, Optional, Union
 from scipy import interpolate
 from scipy.ndimage import map_coordinates
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 logger = logging.getLogger(__name__)
 
@@ -23,526 +27,601 @@ logger = logging.getLogger(__name__)
 class CITSAnalysis:
     """CITS 數據分析類別"""
     
-    @staticmethod
-    def extract_line_sts_spectra(
-        data_3d: np.ndarray,
-        pixel_start: List[int],
-        pixel_end: List[int],
-        bias_values: np.ndarray,
-        physical_length: float,
-        interpolation_method: str = 'linear'
-    ) -> Dict:
+    def __init__(self, cits_data: Dict):
         """
-        從3D CITS數據中提取線段上的STS光譜
+        初始化 CITS 分析器
         
         Args:
-            data_3d: 3D CITS數據 shape: (n_bias, grid_y, grid_x)
-            pixel_start: 起始像素座標 [row, col]
-            pixel_end: 終止像素座標 [row, col]
-            bias_values: 偏壓值陣列
-            physical_length: 線段物理長度 (nm)
-            interpolation_method: 插值方法 ('linear', 'nearest', 'cubic')
-            
-        Returns:
-            dict: 包含線段STS數據的字典
+            cits_data: 從 DatParser 解析的 CITS 數據
         """
-        try:
-            logger.info(f"開始提取CITS線段STS光譜: {pixel_start} -> {pixel_end}")
-            
-            # 計算線段上的採樣點數
-            pixel_distance = max(
-                abs(pixel_end[0] - pixel_start[0]),
-                abs(pixel_end[1] - pixel_start[1]),
-                10  # 最少10個點
-            )
-            n_points = max(pixel_distance, 50)  # 確保足夠的採樣密度
-            
-            # 生成線段上的座標
-            if n_points > 1:
-                rows = np.linspace(pixel_start[0], pixel_end[0], n_points)
-                cols = np.linspace(pixel_start[1], pixel_end[1], n_points)
-            else:
-                rows = np.array([pixel_start[0]])
-                cols = np.array([pixel_start[1]])
-            
-            # 確保座標在有效範圍內
-            grid_height, grid_width = data_3d.shape[1], data_3d.shape[2]
-            rows = np.clip(rows, 0, grid_height - 1)
-            cols = np.clip(cols, 0, grid_width - 1)
-            
-            # 提取每個位置的完整STS光譜
-            sts_spectra = []
-            line_positions = []
-            valid_indices = []
-            
-            for i, (row, col) in enumerate(zip(rows, cols)):
-                try:
-                    # 使用不同的插值方法
-                    if interpolation_method == 'nearest':
-                        # 最近鄰插值
-                        row_idx = int(round(row))
-                        col_idx = int(round(col))
-                        spectrum = data_3d[:, row_idx, col_idx]
-                        
-                    elif interpolation_method == 'linear':
-                        # 雙線性插值
-                        spectrum = CITSAnalysis._bilinear_interpolate_spectrum(
-                            data_3d, row, col
-                        )
-                        
-                    elif interpolation_method == 'cubic':
-                        # 三次插值（使用scipy的map_coordinates）
-                        coordinates = np.array([[row], [col]])
-                        spectrum = np.zeros(data_3d.shape[0])
-                        for bias_idx in range(data_3d.shape[0]):
-                            spectrum[bias_idx] = map_coordinates(
-                                data_3d[bias_idx], coordinates, 
-                                order=3, mode='nearest'
-                            )[0]
-                    
-                    sts_spectra.append(spectrum.tolist())
-                    
-                    # 計算沿線段的相對位置
-                    position_ratio = i / (n_points - 1) if n_points > 1 else 0
-                    physical_position = position_ratio * physical_length
-                    line_positions.append(physical_position)
-                    valid_indices.append(i)
-                    
-                except Exception as e:
-                    logger.warning(f"位置 ({row:.2f}, {col:.2f}) 插值失敗: {e}")
-                    continue
-            
-            if not sts_spectra:
-                raise ValueError("無法提取任何有效的STS光譜數據")
-            
-            # 轉換為numpy陣列以便後續處理
-            sts_spectra_array = np.array(sts_spectra)  # shape: (n_positions, n_bias)
-            
-            # 計算統計資訊
-            stats = CITSAnalysis._calculate_sts_statistics(sts_spectra_array, bias_values)
-            
-            logger.info(f"成功提取 {len(sts_spectra)} 個位置的STS光譜")
-            
-            return {
-                'line_positions': line_positions,           # 沿線段的物理位置 (nm)
-                'bias_values': bias_values.tolist(),        # 偏壓軸 (mV)
-                'sts_spectra': sts_spectra,                 # STS光譜數據 [position][bias]
-                'line_length': float(physical_length),      # 線段總長度 (nm)
-                'n_positions': len(line_positions),         # 位置點數
-                'n_bias': len(bias_values),                 # 偏壓點數
-                'interpolation_method': interpolation_method, # 使用的插值方法
-                'pixel_coordinates': {                      # 像素座標記錄
-                    'rows': rows[valid_indices].tolist(),
-                    'cols': cols[valid_indices].tolist()
-                },
-                'statistics': stats,                        # 統計資訊
-                '_sts_spectra_array': sts_spectra_array     # numpy格式供內部分析使用 (不會序列化)
-            }
-            
-        except Exception as e:
-            logger.error(f"提取CITS線段STS光譜失敗: {str(e)}")
-            raise
-    
-    @staticmethod
-    def _bilinear_interpolate_spectrum(data_3d: np.ndarray, row: float, col: float) -> np.ndarray:
-        """
-        對單個位置的完整STS光譜進行雙線性插值
+        self.cits_data = cits_data
+        self.logger = logging.getLogger(__name__)
         
-        Args:
-            data_3d: 3D CITS數據
-            row: 行座標（浮點數）
-            col: 列座標（浮點數）
+        # 驗證輸入數據
+        if not self._validate_cits_data():
+            raise ValueError("輸入的數據不是有效的 CITS 格式")
             
-        Returns:
-            np.ndarray: 插值後的STS光譜
-        """
-        # 獲取四個鄰近像素的整數座標
-        row_floor = int(np.floor(row))
-        row_ceil = min(row_floor + 1, data_3d.shape[1] - 1)
-        col_floor = int(np.floor(col))
-        col_ceil = min(col_floor + 1, data_3d.shape[2] - 1)
+        # 提取基本資訊
+        self.data_3d = cits_data['data_3d']  # (n_bias, y, x)
+        self.bias_values = cits_data['bias_values']
+        self.grid_size = cits_data['grid_size']  # [grid_x, grid_y]
+        self.scan_direction = cits_data.get('scan_direction', 'downward')
         
-        # 計算權重
-        dr = row - row_floor
-        dc = col - col_floor
-        
-        # 雙線性插值
-        spectrum = (
-            (1 - dr) * (1 - dc) * data_3d[:, row_floor, col_floor] +
-            (1 - dr) * dc * data_3d[:, row_floor, col_ceil] +
-            dr * (1 - dc) * data_3d[:, row_ceil, col_floor] +
-            dr * dc * data_3d[:, row_ceil, col_ceil]
+        # 準備顯示用數據
+        from ..parsers.dat_parser import DatParser
+        self.display_data = DatParser.prepare_cits_for_display(
+            self.data_3d, self.scan_direction
         )
         
-        return spectrum
+        self.logger.info(f"CITS 分析器初始化完成：{self.grid_size[0]}×{self.grid_size[1]} 網格，"
+                        f"{len(self.bias_values)} 個偏壓點，{self.scan_direction} 掃描")
     
-    @staticmethod
-    def _calculate_sts_statistics(sts_spectra_array: np.ndarray, bias_values: np.ndarray) -> Dict:
+    def _validate_cits_data(self) -> bool:
+        """驗證 CITS 數據的有效性"""
+        required_keys = ['data_3d', 'bias_values', 'grid_size', 'measurement_mode']
+        
+        for key in required_keys:
+            if key not in self.cits_data:
+                self.logger.error(f"缺少必要的鍵：{key}")
+                return False
+        
+        if self.cits_data['measurement_mode'] != 'CITS':
+            self.logger.error("不是 CITS 數據")
+            return False
+            
+        data_3d = self.cits_data['data_3d']
+        if data_3d.ndim != 3:
+            self.logger.error(f"data_3d 維度錯誤：期望 3D，實際 {data_3d.ndim}D")
+            return False
+            
+        return True
+    
+    def extract_line_profile(self, start_coord: Tuple[int, int], 
+                        end_coord: Tuple[int, int],
+                        use_display_data: bool = True,
+                        sampling_method: str = 'bresenham') -> Dict:
         """
-        計算STS光譜的統計資訊
+        提取指定線段的 STS 光譜剖面
         
         Args:
-            sts_spectra_array: STS光譜陣列 shape: (n_positions, n_bias)
-            bias_values: 偏壓值陣列
+            start_coord: 起始座標 (x0, y0)
+            end_coord: 終點座標 (x1, y1)
+            use_display_data: 是否使用方向修正後的數據
+            sampling_method: 採樣方法 'bresenham' 或 'interpolate'
             
         Returns:
-            dict: 統計資訊
+            Dict: 包含線段 STS 數據的字典
         """
         try:
-            # 基本統計
-            current_min = np.min(sts_spectra_array)
-            current_max = np.max(sts_spectra_array)
-            current_mean = np.mean(sts_spectra_array)
-            current_std = np.std(sts_spectra_array)
+            x0, y0 = start_coord
+            x1, y1 = end_coord
             
-            # 沿位置方向的統計（每個偏壓的統計）
-            bias_mean = np.mean(sts_spectra_array, axis=0)
-            bias_std = np.std(sts_spectra_array, axis=0)
-            bias_min = np.min(sts_spectra_array, axis=0)
-            bias_max = np.max(sts_spectra_array, axis=0)
+            # 選擇數據源
+            data_source = self.display_data if use_display_data else self.data_3d
             
-            # 沿偏壓方向的統計（每個位置的統計）
-            position_mean = np.mean(sts_spectra_array, axis=1)
-            position_std = np.std(sts_spectra_array, axis=1)
-            position_min = np.min(sts_spectra_array, axis=1)
-            position_max = np.max(sts_spectra_array, axis=1)
+            if sampling_method == 'bresenham':
+                # 使用 Bresenham 演算法獲取線段上所有像素點
+                x_coords, y_coords = self._bresenham_line(x0, y0, x1, y1)
+            else:
+                # 使用高密度插值採樣
+                x_coords, y_coords = self._dense_sampling(x0, y0, x1, y1)
             
-            return {
-                'global': {
-                    'min': float(current_min),
-                    'max': float(current_max),
-                    'mean': float(current_mean),
-                    'std': float(current_std)
-                },
-                'by_bias': {
-                    'mean': bias_mean.tolist(),
-                    'std': bias_std.tolist(),
-                    'min': bias_min.tolist(),
-                    'max': bias_max.tolist()
-                },
-                'by_position': {
-                    'mean': position_mean.tolist(),
-                    'std': position_std.tolist(),
-                    'min': position_min.tolist(),
-                    'max': position_max.tolist()
-                }
+            # 確保座標在範圍內
+            x_coords = np.clip(x_coords, 0, data_source.shape[2]-1)
+            y_coords = np.clip(y_coords, 0, data_source.shape[1]-1)
+            
+            # 提取 STS 數據
+            sts_curves = []
+            for x, y in zip(x_coords, y_coords):
+                sts_curves.append(data_source[:, y, x])
+            
+            line_sts = np.array(sts_curves).T  # (n_bias, n_points)
+            positions = np.arange(len(x_coords))
+            
+            # 計算物理長度
+            physical_length = self._calculate_physical_length(start_coord, end_coord)
+            
+            result = {
+                'line_sts': line_sts,
+                'bias_values': self.bias_values,
+                'positions': positions,
+                'x_coords': x_coords,  # 新增：實際採樣的 x 座標
+                'y_coords': y_coords,  # 新增：實際採樣的 y 座標
+                'physical_length': physical_length,
+                'start_coord': start_coord,
+                'end_coord': end_coord,
+                'n_points': line_sts.shape[1],
+                'n_bias': line_sts.shape[0],
+                'sampling_method': sampling_method
             }
+            
+            self.logger.info(f"線段剖面提取完成：({x0},{y0}) → ({x1},{y1})，"
+                        f"{result['n_points']} 點，方法：{sampling_method}")
+            
+            return result
             
         except Exception as e:
-            logger.error(f"計算STS統計資訊失敗: {e}")
-            return {}
-    
-    @staticmethod
-    def generate_sts_evolution_data(
-        line_positions: List[float],
-        bias_values: List[float],
-        sts_spectra_array: np.ndarray,
-        colormap: str = 'RdBu_r'
-    ) -> Dict:
-        """
-        生成STS evolution圖的數據配置
-        
-        Args:
-            line_positions: 沿線段的位置
-            bias_values: 偏壓值
-            sts_spectra_array: STS光譜陣列
-            colormap: 色彩映射
-            
-        Returns:
-            dict: Plotly heatmap 配置
-        """
-        try:
-            logger.info("生成STS evolution圖數據")
-            
-            # 數據需要轉置以正確顯示 (bias vs position)
-            z_data = sts_spectra_array.T.tolist()  # shape: (n_bias, n_positions)
-            
-            # 計算數據範圍
-            z_min = float(np.min(sts_spectra_array))
-            z_max = float(np.max(sts_spectra_array))
-            
-            # 對稱化colorbar（對於電流數據通常有正負值）
-            z_abs_max = max(abs(z_min), abs(z_max))
-            
-            plotly_data = {
-                'type': 'heatmap',
-                'z': z_data,
-                'x': line_positions,  # X軸：沿線段位置
-                'y': bias_values,     # Y軸：偏壓
-                'colorscale': colormap,
-                'showscale': True,
-                'zmin': -z_abs_max,
-                'zmax': z_abs_max,
-                'colorbar': {
-                    'title': {
-                        'text': '電流 (A)',
-                        'side': 'right'
-                    },
-                    'thickness': 20,
-                    'len': 0.8,
-                    'x': 1.02
-                },
-                'hovertemplate': (
-                    '位置: %{x:.2f} nm<br>' +
-                    '偏壓: %{y:.1f} mV<br>' +
-                    '電流: %{z:.2e} A<br>' +
-                    '<extra></extra>'
-                )
-            }
-            
-            layout = {
-                'title': 'STS Evolution',
-                'xaxis': {
-                    'title': {'text': '沿線段位置 (nm)'},
-                    'showgrid': True,
-                    'gridcolor': '#e5e5e5'
-                },
-                'yaxis': {
-                    'title': {'text': '偏壓 (mV)'},
-                    'showgrid': True,
-                    'gridcolor': '#e5e5e5'
-                },
-                'margin': {'l': 60, 'r': 80, 't': 50, 'b': 60},
-                'autosize': True,
-                'plot_bgcolor': 'white',
-                'paper_bgcolor': 'white'
-            }
-            
-            logger.info(f"STS evolution數據生成完成: {len(bias_values)} x {len(line_positions)}")
-            
-            return {
-                'data': [plotly_data],
-                'layout': layout
-            }
-            
-        except Exception as e:
-            logger.error(f"生成STS evolution數據失敗: {e}")
+            self.logger.error(f"線段剖面提取失敗：{e}")
             raise
-    
-    @staticmethod
-    def generate_sts_overlay_data(
-        line_positions: List[float],
-        bias_values: List[float],
-        sts_spectra_array: np.ndarray,
-        selected_positions: Optional[List[int]] = None,
-        normalize: bool = False
-    ) -> Dict:
+
+    def _bresenham_line(self, x0: int, y0: int, x1: int, y1: int) -> Tuple[np.ndarray, np.ndarray]:
         """
-        生成STS曲線疊加圖的數據配置
+        Bresenham 線段演算法 - 獲取線段上的所有像素點
+        
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: (x_coords, y_coords)
+        """
+        points_x = []
+        points_y = []
+        
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+        
+        x, y = x0, y0
+        
+        while True:
+            points_x.append(x)
+            points_y.append(y)
+            
+            if x == x1 and y == y1:
+                break
+                
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+        
+        return np.array(points_x), np.array(points_y)
+
+    def _dense_sampling(self, x0: int, y0: int, x1: int, y1: int, 
+                    density_factor: float = 2.0) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        高密度採樣方法
         
         Args:
-            line_positions: 沿線段的位置
-            bias_values: 偏壓值
-            sts_spectra_array: STS光譜陣列
-            selected_positions: 選擇顯示的位置索引，None則顯示全部
-            normalize: 是否標準化曲線
-            
-        Returns:
-            dict: Plotly line plot 配置
+            density_factor: 密度因子，越大採樣點越多
         """
-        try:
-            logger.info("生成STS曲線疊加圖數據")
-            
-            if selected_positions is None:
-                # 如果沒有指定，選擇均勻分佈的幾條曲線
-                n_total = len(line_positions)
-                n_show = min(10, n_total)  # 最多顯示10條曲線
-                selected_positions = np.linspace(0, n_total-1, n_show, dtype=int).tolist()
-            
-            traces = []
-            colors = CITSAnalysis._generate_color_palette(len(selected_positions))
-            
-            for i, pos_idx in enumerate(selected_positions):
-                if pos_idx >= len(line_positions):
-                    continue
-                
-                spectrum = sts_spectra_array[pos_idx]
-                
-                # 標準化處理
-                if normalize:
-                    spectrum = (spectrum - np.mean(spectrum)) / np.std(spectrum)
-                
-                trace = {
-                    'type': 'scatter',
-                    'mode': 'lines',
-                    'x': bias_values,
-                    'y': spectrum.tolist(),
-                    'name': f'位置 {line_positions[pos_idx]:.1f} nm',
-                    'line': {
-                        'color': colors[i],
-                        'width': 2
-                    },
-                    'hovertemplate': (
-                        '偏壓: %{x:.1f} mV<br>' +
-                        ('標準化電流: %{y:.2f}<br>' if normalize else '電流: %{y:.2e} A<br>') +
-                        f'位置: {line_positions[pos_idx]:.1f} nm<br>' +
-                        '<extra></extra>'
-                    )
-                }
-                traces.append(trace)
-            
-            layout = {
-                'title': 'STS 曲線疊加圖',
-                'xaxis': {
-                    'title': {'text': '偏壓 (mV)'},
-                    'showgrid': True,
-                    'gridcolor': '#e5e5e5'
-                },
-                'yaxis': {
-                    'title': {'text': '標準化電流' if normalize else '電流 (A)'},
-                    'showgrid': True,
-                    'gridcolor': '#e5e5e5'
-                },
-                'margin': {'l': 60, 'r': 20, 't': 50, 'b': 60},
-                'autosize': True,
-                'plot_bgcolor': 'white',
-                'paper_bgcolor': 'white',
-                'showlegend': True,
-                'legend': {
-                    'x': 1.05,
-                    'y': 1,
-                    'bgcolor': 'rgba(255,255,255,0.8)'
-                }
-            }
-            
-            logger.info(f"STS曲線疊加圖生成完成: {len(traces)} 條曲線")
-            
-            return {
-                'data': traces,
-                'layout': layout
-            }
-            
-        except Exception as e:
-            logger.error(f"生成STS曲線疊加圖數據失敗: {e}")
-            raise
-    
-    @staticmethod
-    def _generate_color_palette(n_colors: int) -> List[str]:
-        """
-        生成色彩調色板
+        distance = np.sqrt((x1-x0)**2 + (y1-y0)**2)
+        n_points = max(int(distance * density_factor), 2)
         
-        Args:
-            n_colors: 需要的顏色數量
-            
-        Returns:
-            List[str]: 顏色列表（十六進位格式）
-        """
-        if n_colors <= 10:
-            # 預定義的10種不同顏色
-            colors = [
-                '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-                '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
-            ]
-            return colors[:n_colors]
+        x_coords = np.linspace(x0, x1, n_points).astype(int)
+        y_coords = np.linspace(y0, y1, n_points).astype(int)
+        
+        # 去除重複點
+        coords = list(zip(x_coords, y_coords))
+        unique_coords = []
+        seen = set()
+        
+        for coord in coords:
+            if coord not in seen:
+                unique_coords.append(coord)
+                seen.add(coord)
+        
+        if unique_coords:
+            x_coords, y_coords = zip(*unique_coords)
+            return np.array(x_coords), np.array(y_coords)
         else:
-            # 使用HSV色彩空間生成更多顏色
-            import colorsys
-            colors = []
-            for i in range(n_colors):
-                hue = i / n_colors
-                rgb = colorsys.hsv_to_rgb(hue, 0.8, 0.9)
-                hex_color = '#{:02x}{:02x}{:02x}'.format(
-                    int(rgb[0] * 255),
-                    int(rgb[1] * 255),
-                    int(rgb[2] * 255)
-                )
-                colors.append(hex_color)
-            return colors
+            return np.array([x0]), np.array([y0])
+
+    def _calculate_physical_length(self, start_coord: Tuple[int, int], 
+                                end_coord: Tuple[int, int]) -> float:
+        """計算物理長度"""
+        x0, y0 = start_coord
+        x1, y1 = end_coord
+        
+        if 'x_grid' in self.cits_data and 'y_grid' in self.cits_data:
+            x_grid = self.cits_data['x_grid']
+            y_grid = self.cits_data['y_grid']
+            
+            x_range = np.max(x_grid) - np.min(x_grid)
+            y_range = np.max(y_grid) - np.min(y_grid)
+            x_pixel_size = x_range / self.grid_size[0]
+            y_pixel_size = y_range / self.grid_size[1]
+            
+            return np.sqrt(((x1-x0) * x_pixel_size)**2 + ((y1-y0) * y_pixel_size)**2)
+        else:
+            return np.sqrt((x1-x0)**2 + (y1-y0)**2)
     
-    @staticmethod
-    def apply_energy_alignment(
-        sts_spectra_array: np.ndarray,
-        bias_values: np.ndarray,
-        alignment_method: str = 'zero_crossing',
-        reference_position: Optional[int] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def detect_bias_pattern(self, method: str = 'simple') -> Dict:
         """
-        應用能帶對齊到STS光譜
+        檢測偏壓掃描模式
         
         Args:
-            sts_spectra_array: STS光譜陣列
-            bias_values: 偏壓值陣列
-            alignment_method: 對齊方法 ('zero_crossing', 'peak', 'manual')
-            reference_position: 參考位置索引
+            method: 檢測方法，'simple' 或 'complex'
             
         Returns:
-            Tuple: (對齊後的光譜陣列, 偏移量陣列)
+            Dict: 偏壓模式檢測結果
+        """
+        if method == 'simple':
+            return self._detect_bias_pattern_simple(self.bias_values)
+        else:
+            # 可以在此實現更複雜的檢測方法
+            self.logger.warning("複雜檢測方法尚未實現，使用簡單方法")
+            return self._detect_bias_pattern_simple(self.bias_values)
+    
+    def _detect_bias_pattern_simple(self, bias_values: np.ndarray) -> Dict:
+        """
+        簡單的偏壓模式檢測方法 - 基於最大/最小值檢測
+        這是 IVCutter 函數的核心邏輯，高效且實用
+        
+        Args:
+            bias_values: 偏壓值數組
+        
+        Returns:
+            Dict: 檢測結果包含前向/後向掃描段
+        """
+        if len(bias_values) < 2:
+            return {
+                'method': 'simple_max_min',
+                'forward_segments': [(0, len(bias_values)-1)],
+                'backward_segments': [],
+                'n_cycles': 1,
+                'pattern_type': 'single_point' if len(bias_values) == 1 else 'forward_only'
+            }
+        
+        # 找到偏壓的最大值和最小值
+        bias_starter = bias_values[0]
+        bias_max = np.max(bias_values)
+        bias_min = np.min(bias_values)
+        
+        # 確定掃描的終點值
+        if bias_starter == bias_max:
+            bias_ender = bias_min
+        else:
+            bias_ender = bias_max
+        
+        # 找到起始點和終點的所有索引位置
+        start_points = np.where(bias_values == bias_starter)[0]
+        end_points = np.where(bias_values == bias_ender)[0]
+        
+        self.logger.debug(f"偏壓範圍：{bias_min:.3f}V 到 {bias_max:.3f}V")
+        self.logger.debug(f"起始偏壓：{bias_starter:.3f}V (索引：{start_points})")
+        self.logger.debug(f"終點偏壓：{bias_ender:.3f}V (索引：{end_points})")
+        
+        # 確定掃描週期數
+        ramp_cycle = len(end_points) 
+        
+        forward_segments = []
+        backward_segments = []
+        
+        # 分析掃描模式
+        if len(start_points) == 1 and len(end_points) == 1:
+            # 單一前向掃描
+            forward_segments.append((start_points[0], end_points[0]))
+            pattern_type = 'single_forward'
+            
+        elif len(start_points) == len(end_points):
+            # 多次前向掃描
+            for i in range(len(start_points)):
+                forward_segments.append((start_points[i], end_points[i]))
+            pattern_type = f'multiple_forward_{len(forward_segments)}f'
+            
+        elif len(start_points) == (len(end_points) + 1):
+            # 來回掃描模式
+            for i in range(len(end_points)):
+                forward_segments.append((start_points[i], end_points[i]))
+                backward_segments.append((end_points[i], start_points[i + 1]))
+            pattern_type = f'raster_{len(backward_segments)}'
+        else:
+            # 預設為單一前向掃描
+            forward_segments.append((0, len(bias_values)-1))
+            pattern_type = 'unknown_forward'
+
+        self.logger.info(f"檢測到偏壓模式：{pattern_type}")
+        self.logger.info(f"前向段數：{len(forward_segments)}，後向段數：{len(backward_segments)}")
+        
+        return {
+            'method': 'simple_max_min',
+            'forward_segments': forward_segments,
+            'backward_segments': backward_segments,
+            'n_cycles': ramp_cycle,
+            'pattern_type': pattern_type,
+            'bias_starter': bias_starter,
+            'bias_ender': bias_ender,
+            'start_points': start_points.tolist(),
+            'end_points': end_points.tolist()
+        }
+    
+    def slice_data_by_bias(self, line_profile: Dict, 
+                          bias_pattern: Dict = None,
+                          segment_type: str = 'forward') -> Dict:
+        """
+        根據偏壓模式切割線段數據
+        
+        Args:
+            line_profile: 從 extract_line_profile 獲得的線段數據
+            bias_pattern: 偏壓模式檢測結果，如果為 None 則自動檢測
+            segment_type: 'forward', 'backward', 或 'all'
+            
+        Returns:
+            Dict: 切割後的數據
         """
         try:
-            logger.info(f"應用能帶對齊: {alignment_method}")
+            if bias_pattern is None:
+                bias_pattern = self.detect_bias_pattern()
             
-            n_positions, n_bias = sts_spectra_array.shape
-            energy_shifts = np.zeros(n_positions)
+            line_sts = line_profile['line_sts']
+            bias_values = line_profile['bias_values']
             
-            if reference_position is None:
-                reference_position = n_positions // 2  # 使用中間位置作為參考
+            result = {
+                'pattern_info': bias_pattern,
+                'segments': {}
+            }
             
-            reference_spectrum = sts_spectra_array[reference_position]
-            
-            for i in range(n_positions):
-                if i == reference_position:
-                    continue
-                
-                current_spectrum = sts_spectra_array[i]
-                
-                if alignment_method == 'zero_crossing':
-                    # 尋找零電流交叉點
-                    ref_zero = CITSAnalysis._find_zero_crossing(reference_spectrum, bias_values)
-                    cur_zero = CITSAnalysis._find_zero_crossing(current_spectrum, bias_values)
-                    energy_shifts[i] = ref_zero - cur_zero
+            # 處理前向段
+            if segment_type in ['forward', 'all'] and bias_pattern['forward_segments']:
+                forward_data = {}
+                for i, (start_idx, end_idx) in enumerate(bias_pattern['forward_segments']):
+                    segment_bias = bias_values[start_idx:end_idx+1]
+                    segment_data = line_sts[start_idx:end_idx+1, :]
                     
-                elif alignment_method == 'peak':
-                    # 尋找主要峰值位置
-                    ref_peak = bias_values[np.argmax(np.abs(reference_spectrum))]
-                    cur_peak = bias_values[np.argmax(np.abs(current_spectrum))]
-                    energy_shifts[i] = ref_peak - cur_peak
-                
-                # 其他對齊方法可以在這裡添加
+                    forward_data[f'forward_{i+1}'] = {
+                        'bias_values': segment_bias,
+                        'data': segment_data,
+                        'bias_range': (segment_bias[0], segment_bias[-1]),
+                        'indices': (start_idx, end_idx)
+                    }
+                result['segments']['forward'] = forward_data
             
-            # 應用偏移（這裡返回偏移量，實際的數據偏移需要在前端或後續處理中實現）
-            logger.info(f"計算完成能帶對齊偏移量，範圍: {np.min(energy_shifts):.2f} ~ {np.max(energy_shifts):.2f} mV")
+            # 處理後向段
+            if segment_type in ['backward', 'all'] and bias_pattern['backward_segments']:
+                backward_data = {}
+                for i, (start_idx, end_idx) in enumerate(bias_pattern['backward_segments']):
+                    segment_bias = bias_values[start_idx:end_idx+1]
+                    segment_data = line_sts[start_idx:end_idx+1, :]
+                    
+                    backward_data[f'backward_{i+1}'] = {
+                        'bias_values': segment_bias,
+                        'data': segment_data,
+                        'bias_range': (segment_bias[0], segment_bias[-1]),
+                        'indices': (start_idx, end_idx)
+                    }
+                result['segments']['backward'] = backward_data
             
-            return sts_spectra_array, energy_shifts
+            self.logger.info(f"偏壓切割完成：{segment_type} 段，"
+                           f"前向 {len(result['segments'].get('forward', {}))} 段，"
+                           f"後向 {len(result['segments'].get('backward', {}))} 段")
+            
+            return result
             
         except Exception as e:
-            logger.error(f"能帶對齊失敗: {e}")
-            return sts_spectra_array, np.zeros(sts_spectra_array.shape[0])
+            self.logger.error(f"偏壓切割失敗：{e}")
+            raise
     
-    @staticmethod
-    def _find_zero_crossing(spectrum: np.ndarray, bias_values: np.ndarray) -> float:
+    def plot_spectrum(self, sliced_data: Dict, 
+                     segment_key: str = 'forward_1',
+                     show_all_positions: bool = False,
+                     max_curves: int = 10) -> go.Figure:
         """
-        尋找光譜的零交叉點
+        繪製能譜圖（偏壓 vs 強度）
         
         Args:
-            spectrum: STS光譜
-            bias_values: 偏壓值
+            sliced_data: 從 slice_data_by_bias 獲得的切割數據
+            segment_key: 要繪製的段，例如 'forward_1', 'backward_1'
+            show_all_positions: 是否顯示所有位置的曲線
+            max_curves: 最大顯示曲線數
             
         Returns:
-            float: 零交叉點的偏壓值
+            go.Figure: Plotly 圖形對象
         """
         try:
-            # 尋找符號變化點
-            sign_changes = np.where(np.diff(np.sign(spectrum)) != 0)[0]
+            # 解析段類型和索引
+            if '_' in segment_key:
+                segment_type, segment_idx = segment_key.split('_', 1)
+            else:
+                segment_type, segment_idx = segment_key, '1'
             
-            if len(sign_changes) == 0:
-                # 如果沒有符號變化，返回最接近零的點
-                min_idx = np.argmin(np.abs(spectrum))
-                return bias_values[min_idx]
+            if segment_type not in sliced_data['segments']:
+                raise ValueError(f"找不到段類型：{segment_type}")
             
-            # 尋找最接近零偏壓的零交叉點
-            zero_crossings = []
-            for idx in sign_changes:
-                # 線性插值找精確的零交叉點
-                x1, x2 = bias_values[idx], bias_values[idx + 1]
-                y1, y2 = spectrum[idx], spectrum[idx + 1]
-                zero_crossing = x1 - y1 * (x2 - x1) / (y2 - y1)
-                zero_crossings.append(zero_crossing)
+            segment_data = sliced_data['segments'][segment_type][segment_key]
+            bias_values = segment_data['bias_values']
+            data = segment_data['data']  # (n_bias, n_positions)
             
-            # 返回最接近零偏壓的零交叉點
-            zero_crossings = np.array(zero_crossings)
-            closest_idx = np.argmin(np.abs(zero_crossings))
-            return zero_crossings[closest_idx]
+            fig = go.Figure()
+            
+            if show_all_positions:
+                # 顯示所有位置，但限制數量
+                n_positions = data.shape[1]
+                step = max(1, n_positions // max_curves)
+                positions_to_plot = range(0, n_positions, step)
+            else:
+                # 只顯示幾條代表性曲線
+                n_positions = data.shape[1]
+                positions_to_plot = np.linspace(0, n_positions-1, 
+                                              min(max_curves, n_positions), 
+                                              dtype=int)
+            
+            # 添加光譜曲線
+            for i, pos_idx in enumerate(positions_to_plot):
+                fig.add_trace(go.Scatter(
+                    x=bias_values,
+                    y=data[:, pos_idx],
+                    mode='lines',
+                    name=f'位置 {pos_idx+1}',
+                    line=dict(width=1.5),
+                    hovertemplate='偏壓: %{x:.3f} V<br>電流: %{y:.2e} A<extra></extra>'
+                ))
+            
+            # 更新圖表布局
+            bias_range = segment_data['bias_range']
+            fig.update_layout(
+                title=f"STS 光譜圖 ({segment_key})<br>"
+                      f"<sub>偏壓範圍: {bias_range[0]:.3f}V 到 {bias_range[1]:.3f}V</sub>",
+                xaxis_title="偏壓電壓 (V)",
+                yaxis_title="電流 (A)",
+                width=800,
+                height=600,
+                template="plotly_white",
+                hovermode='closest'
+            )
+            
+            self.logger.info(f"能譜圖繪製完成：{segment_key}，{len(positions_to_plot)} 條曲線")
+            return fig
             
         except Exception as e:
-            logger.warning(f"尋找零交叉點失敗: {e}")
-            return 0.0
+            self.logger.error(f"能譜圖繪製失敗：{e}")
+            raise
+    
+    def plot_band_map(self, sliced_data: Dict,
+                     segment_key: str = 'forward_1',
+                     use_log_scale: bool = False,
+                     smooth: bool = True) -> go.Figure:
+        """
+        繪製能帶圖（位置 vs 偏壓的熱力圖）
+        
+        Args:
+            sliced_data: 從 slice_data_by_bias 獲得的切割數據
+            segment_key: 要繪製的段
+            use_log_scale: 是否使用對數尺度
+            smooth: 是否啟用平滑化
+            
+        Returns:
+            go.Figure: Plotly 圖形對象
+        """
+        try:
+            # 解析段類型和索引
+            if '_' in segment_key:
+                segment_type, segment_idx = segment_key.split('_', 1)
+            else:
+                segment_type, segment_idx = segment_key, '1'
+            
+            if segment_type not in sliced_data['segments']:
+                raise ValueError(f"找不到段類型：{segment_type}")
+            
+            segment_data = sliced_data['segments'][segment_type][segment_key]
+            bias_values = segment_data['bias_values']
+            data = segment_data['data']  # (n_bias, n_positions)
+            
+            # 準備強度數據
+            if use_log_scale:
+                # 使用絕對值的對數
+                intensity_data = np.log10(np.abs(data) + 1e-15)
+                colorbar_title = "log₁₀|電流| (A)"
+                colorscale = 'Viridis'
+            else:
+                # 使用絕對值
+                intensity_data = np.abs(data)
+                colorbar_title = "|電流| (A)"
+                colorscale = 'Viridis'
+            
+            # 位置軸
+            position_axis = list(range(1, data.shape[1] + 1))
+            
+            fig = go.Figure()
+            
+            # 添加熱力圖
+            fig.add_trace(go.Heatmap(
+                z=intensity_data,
+                x=position_axis,
+                y=bias_values,
+                colorscale=colorscale,
+                zsmooth='best' if smooth else False,
+                colorbar=dict(
+                    title=dict(text=colorbar_title, side="right")
+                ),
+                hovertemplate='位置: %{x}<br>偏壓: %{y:.3f} V<br>強度: %{z:.2e}<extra></extra>'
+            ))
+            
+            # 更新圖表布局
+            bias_range = segment_data['bias_range']
+            fig.update_layout(
+                title=f"能帶圖 ({segment_key})<br>"
+                      f"<sub>偏壓範圍: {bias_range[0]:.3f}V 到 {bias_range[1]:.3f}V | "
+                      f"{'對數尺度' if use_log_scale else '線性尺度'} | "
+                      f"{'平滑' if smooth else '原始'}</sub>",
+                xaxis_title="位置 (像素)",
+                yaxis_title="偏壓電壓 (V)",
+                width=800,
+                height=600,
+                template="plotly_white"
+            )
+            
+            self.logger.info(f"能帶圖繪製完成：{segment_key}，"
+                           f"{'對數' if use_log_scale else '線性'}尺度")
+            return fig
+            
+        except Exception as e:
+            self.logger.error(f"能帶圖繪製失敗：{e}")
+            raise
+    
+    def get_analysis_summary(self) -> Dict:
+        """
+        獲取分析摘要資訊
+        
+        Returns:
+            Dict: 包含各種統計資訊的摘要
+        """
+        try:
+            bias_pattern = self.detect_bias_pattern()
+            
+            summary = {
+                'data_info': {
+                    'grid_size': self.grid_size,
+                    'n_bias_points': len(self.bias_values),
+                    'bias_range': (float(np.min(self.bias_values)), 
+                                 float(np.max(self.bias_values))),
+                    'scan_direction': self.scan_direction,
+                    'data_shape': list(self.data_3d.shape)
+                },
+                'bias_pattern': bias_pattern,
+                'statistics': {
+                    'data_min': float(np.min(self.data_3d)),
+                    'data_max': float(np.max(self.data_3d)),
+                    'data_mean': float(np.mean(self.data_3d)),
+                    'data_std': float(np.std(self.data_3d))
+                }
+            }
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"生成分析摘要失敗：{e}")
+            raise
+
+
+# 便利函數
+def analyze_cits_line(cits_data: Dict, 
+                     start_coord: Tuple[int, int],
+                     end_coord: Tuple[int, int],
+                     segment_type: str = 'forward') -> Dict:
+    """
+    便利函數：完整的 CITS 線段分析流程
+    
+    Args:
+        cits_data: CITS 數據
+        start_coord: 起始座標
+        end_coord: 終點座標
+        segment_type: 分析的段類型
+        
+    Returns:
+        Dict: 完整的分析結果
+    """
+    # 創建分析器
+    analyzer = CITSAnalysis(cits_data)
+    
+    # 提取線段剖面
+    line_profile = analyzer.extract_line_profile(start_coord, end_coord)
+    
+    # 檢測偏壓模式
+    bias_pattern = analyzer.detect_bias_pattern()
+    
+    # 切割數據
+    sliced_data = analyzer.slice_data_by_bias(line_profile, bias_pattern, segment_type)
+    
+    # 生成摘要
+    summary = analyzer.get_analysis_summary()
+    
+    return {
+        'analyzer': analyzer,
+        'line_profile': line_profile,
+        'bias_pattern': bias_pattern,
+        'sliced_data': sliced_data,
+        'summary': summary
+    }

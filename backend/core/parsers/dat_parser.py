@@ -2,6 +2,7 @@ import os
 import logging
 import pandas as pd
 import numpy as np
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +317,68 @@ class DatParser:
         except Exception as e:
             self.logger.warning(f"掃描方向判斷失敗，使用預設值 'downward': {e}")
             return 'downward'
+        
+    @staticmethod
+    def is_cits_data(data: Dict) -> bool:
+        """
+        檢查解析後的數據是否為 CITS 格式
+        
+        Args:
+            data: 從 parse() 方法返回的數據字典
+            
+        Returns:
+            bool: True 表示是 CITS 數據
+        """
+        # 方法1: 檢查明確的 measurement_mode 標記
+        if 'measurement_mode' in data and data['measurement_mode'] == 'CITS':
+            return True
+        
+        # 方法2: 檢查是否有 3D 數據結構
+        if 'data_3d' in data:
+            data_array = np.array(data['data_3d'])
+            if data_array.ndim == 3 and data_array.shape[0] >= 2:
+                return True
+        
+        # 方法3: 檢查網格尺寸信息
+        if 'grid_size' in data and isinstance(data['grid_size'], (list, tuple)):
+            grid_x, grid_y = data['grid_size']
+            if grid_x > 1 and grid_y > 1:
+                return True
+                
+        return False
+    
+    @staticmethod 
+    def prepare_cits_for_display(data_3d: np.ndarray, scan_direction: str) -> np.ndarray:
+        """
+        為顯示準備 CITS 數據的方向
+        確保原點 (0,0) 位於左下角，以保持可視化一致性
+        
+        Args:
+            data_3d: 原始 CITS 數據陣列，形狀為 (n_bias, y, x)
+            scan_direction: 'upward' 或 'downward' 掃描方向
+        
+        Returns:
+            np.ndarray: 具有正確方向的數據視圖
+            
+        Note:
+            - 對於 downward 掃描：翻轉 Y 軸以修正方向
+            - 對於 upward 掃描：保持原始方向
+            - 此操作創建視圖，而非複製（記憶體高效）
+        """
+        if data_3d.ndim != 3:
+            raise ValueError("輸入數據必須是形狀為 (n_bias, y, x) 的 3D 陣列")
+        
+        if scan_direction not in ['downward', 'upward']:
+            raise ValueError("掃描方向必須是 'downward' 或 'upward'")
+        
+        if scan_direction == 'downward':
+            # 對於向下掃描翻轉 Y 軸以確保原點在左下角
+            return data_3d[:, ::-1, :]
+        else:
+            # 對於向上掃描保持原樣
+            return data_3d
 
+        
     def _rotate_coordinates(self, x, y, x_center, y_center, angle):
         """座標旋轉工具函數"""
         import math
