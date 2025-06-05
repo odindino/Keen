@@ -21,6 +21,10 @@ from scipy.ndimage import map_coordinates
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# 導入我們的算法工具 / Import our algorithm tools
+from ..mathematics.geometry import GeometryUtils
+from ..utils.algorithms import AlgorithmUtils
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,11 +104,11 @@ class CITSAnalysis:
             data_source = self.display_data if use_display_data else self.data_3d
             
             if sampling_method == 'bresenham':
-                # 使用 Bresenham 演算法獲取線段上所有像素點
-                x_coords, y_coords = self._bresenham_line(x0, y0, x1, y1)
+                # 使用統一的 Bresenham 演算法 / Use unified Bresenham algorithm
+                x_coords, y_coords = GeometryUtils.bresenham_line_numpy((x0, y0), (x1, y1))
             else:
-                # 使用高密度插值採樣
-                x_coords, y_coords = self._dense_sampling(x0, y0, x1, y1)
+                # 使用統一的高密度採樣方法 / Use unified dense sampling method
+                x_coords, y_coords = GeometryUtils.dense_sampling_with_unique((x0, y0), (x1, y1))
             
             # 確保座標在範圍內
             x_coords = np.clip(x_coords, 0, data_source.shape[2]-1)
@@ -144,70 +148,11 @@ class CITSAnalysis:
             self.logger.error(f"線段剖面提取失敗：{e}")
             raise
 
-    def _bresenham_line(self, x0: int, y0: int, x1: int, y1: int) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Bresenham 線段演算法 - 獲取線段上的所有像素點
-        
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: (x_coords, y_coords)
-        """
-        points_x = []
-        points_y = []
-        
-        dx = abs(x1 - x0)
-        dy = abs(y1 - y0)
-        sx = 1 if x0 < x1 else -1
-        sy = 1 if y0 < y1 else -1
-        err = dx - dy
-        
-        x, y = x0, y0
-        
-        while True:
-            points_x.append(x)
-            points_y.append(y)
-            
-            if x == x1 and y == y1:
-                break
-                
-            e2 = 2 * err
-            if e2 > -dy:
-                err -= dy
-                x += sx
-            if e2 < dx:
-                err += dx
-                y += sy
-        
-        return np.array(points_x), np.array(points_y)
+    # 註釋：已移除 _bresenham_line 方法，現在使用 GeometryUtils.bresenham_line_numpy
+    # Note: Removed _bresenham_line method, now using GeometryUtils.bresenham_line_numpy
 
-    def _dense_sampling(self, x0: int, y0: int, x1: int, y1: int, 
-                    density_factor: float = 2.0) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        高密度採樣方法
-        
-        Args:
-            density_factor: 密度因子，越大採樣點越多
-        """
-        distance = np.sqrt((x1-x0)**2 + (y1-y0)**2)
-        n_points = max(int(distance * density_factor), 2)
-        
-        x_coords = np.linspace(x0, x1, n_points).astype(int)
-        y_coords = np.linspace(y0, y1, n_points).astype(int)
-        
-        # 去除重複點
-        coords = list(zip(x_coords, y_coords))
-        unique_coords = []
-        seen = set()
-        
-        for coord in coords:
-            if coord not in seen:
-                unique_coords.append(coord)
-                seen.add(coord)
-        
-        if unique_coords:
-            x_coords, y_coords = zip(*unique_coords)
-            return np.array(x_coords), np.array(y_coords)
-        else:
-            return np.array([x0]), np.array([y0])
+    # 註釋：已移除 _dense_sampling 方法，現在使用 GeometryUtils.dense_sampling_with_unique
+    # Note: Removed _dense_sampling method, now using GeometryUtils.dense_sampling_with_unique
 
     def _calculate_physical_length(self, start_coord: Tuple[int, int], 
                                 end_coord: Tuple[int, int]) -> float:
@@ -584,6 +529,183 @@ class CITSAnalysis:
         except Exception as e:
             self.logger.error(f"生成分析摘要失敗：{e}")
             raise
+
+    def apply_spectral_smoothing(self, line_profile_data: Dict, 
+                                method: str = 'moving_average', 
+                                window_size: int = 3) -> Dict:
+        """
+        對光譜數據應用平滑化處理
+        Apply smoothing to spectral data
+        
+        使用我們的算法庫對 STS 光譜進行平滑化
+        Uses our algorithm library to smooth STS spectra
+        
+        Args:
+            line_profile_data: 從 extract_line_profile 獲得的數據 / Data from extract_line_profile
+            method: 平滑方法 ('moving_average', 'gaussian') / Smoothing method
+            window_size: 窗口大小或高斯標準差 / Window size or gaussian sigma
+            
+        Returns:
+            Dict: 包含平滑後數據的字典 / Dictionary with smoothed data
+        """
+        try:
+            line_sts = line_profile_data['line_sts']  # (n_bias, n_points)
+            
+            if method == 'moving_average':
+                # 對每個位置的光譜應用移動平均 / Apply moving average to each position's spectrum
+                smoothed_sts = np.zeros_like(line_sts)
+                for i in range(line_sts.shape[1]):  # 對每個位置
+                    smoothed_sts[:, i] = AlgorithmUtils.moving_average(
+                        line_sts[:, i], window_size, mode='same'
+                    )
+            elif method == 'gaussian':
+                # 使用高斯濾波 / Use Gaussian filter
+                smoothed_sts = AlgorithmUtils.gaussian_filter_2d(line_sts, sigma=window_size)
+            else:
+                raise ValueError(f"不支援的平滑方法: {method}")
+            
+            # 創建新的結果字典 / Create new result dictionary
+            result = line_profile_data.copy()
+            result['line_sts'] = smoothed_sts
+            result['original_line_sts'] = line_profile_data['line_sts']  # 保存原始數據
+            result['smoothing_method'] = method
+            result['smoothing_params'] = {'window_size': window_size}
+            
+            self.logger.info(f"光譜平滑化完成：方法={method}，窗口大小={window_size}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"光譜平滑化失敗: {str(e)}")
+            return line_profile_data  # 返回原始數據
+
+    def analyze_spectral_features(self, line_profile_data: Dict, 
+                                 feature_type: str = 'peaks',
+                                 **detection_params) -> Dict:
+        """
+        分析光譜特徵
+        Analyze spectral features
+        
+        檢測 STS 光譜中的峰值、谷值等特徵
+        Detect peaks, valleys and other features in STS spectra
+        
+        Args:
+            line_profile_data: 光譜數據 / Spectral data
+            feature_type: 特徵類型 ('peaks', 'valleys') / Feature type
+            **detection_params: 檢測參數 / Detection parameters
+            
+        Returns:
+            Dict: 特徵檢測結果 / Feature detection results
+        """
+        try:
+            line_sts = line_profile_data['line_sts']  # (n_bias, n_points)
+            bias_values = line_profile_data['bias_values']
+            
+            all_features = []
+            
+            # 對每個位置的光譜進行特徵檢測 / Detect features for each position's spectrum
+            for pos_idx in range(line_sts.shape[1]):
+                spectrum = line_sts[:, pos_idx]
+                
+                if feature_type == 'valleys':
+                    spectrum = -spectrum  # 檢測谷值時反轉信號
+                
+                # 使用統一的峰值檢測算法 / Use unified peak detection algorithm
+                peaks, properties = AlgorithmUtils.find_peaks(
+                    spectrum,
+                    prominence=detection_params.get('prominence', None),
+                    distance=detection_params.get('distance', None),
+                    height=detection_params.get('height', None)
+                )
+                
+                # 記錄特徵信息 / Record feature information
+                for peak_idx in peaks:
+                    all_features.append({
+                        'position_index': pos_idx,
+                        'bias_index': peak_idx,
+                        'bias_value': float(bias_values[peak_idx]),
+                        'intensity': float(line_sts[peak_idx, pos_idx]),
+                        'type': feature_type
+                    })
+            
+            # 統計結果 / Statistical results
+            if all_features:
+                bias_positions = [f['bias_value'] for f in all_features]
+                intensities = [f['intensity'] for f in all_features]
+                
+                stats = {
+                    'count': len(all_features),
+                    'mean_bias': float(np.mean(bias_positions)),
+                    'std_bias': float(np.std(bias_positions)),
+                    'mean_intensity': float(np.mean(intensities)),
+                    'std_intensity': float(np.std(intensities))
+                }
+            else:
+                stats = {'count': 0}
+            
+            return {
+                'features': all_features,
+                'statistics': stats,
+                'detection_params': detection_params,
+                'feature_type': feature_type
+            }
+            
+        except Exception as e:
+            self.logger.error(f"光譜特徵分析失敗: {str(e)}")
+            return {
+                'features': [],
+                'statistics': {'count': 0},
+                'error': str(e)
+            }
+
+    def calculate_conductance_map(self, use_display_data: bool = True) -> Dict:
+        """
+        計算電導率圖
+        Calculate conductance map
+        
+        從 CITS 數據計算 dI/dV 電導率圖
+        Calculate dI/dV conductance map from CITS data
+        
+        Args:
+            use_display_data: 是否使用處理後的數據 / Whether to use processed data
+            
+        Returns:
+            Dict: 包含電導率圖的字典 / Dictionary containing conductance map
+        """
+        try:
+            data_source = self.display_data if use_display_data else self.data_3d
+            bias_values = self.bias_values
+            
+            # 計算 dI/dV / Calculate dI/dV
+            # 使用中央差分法 / Use central difference method
+            conductance_3d = np.zeros_like(data_source)
+            
+            # 對偏壓維度計算導數 / Calculate derivative along bias dimension
+            for i in range(1, len(bias_values) - 1):
+                dI = data_source[i+1] - data_source[i-1]
+                dV = bias_values[i+1] - bias_values[i-1]
+                conductance_3d[i] = dI / dV
+            
+            # 處理邊界 / Handle boundaries
+            if len(bias_values) > 1:
+                # 前向差分 / Forward difference
+                conductance_3d[0] = (data_source[1] - data_source[0]) / (bias_values[1] - bias_values[0])
+                # 後向差分 / Backward difference
+                conductance_3d[-1] = (data_source[-1] - data_source[-2]) / (bias_values[-1] - bias_values[-2])
+            
+            return {
+                'conductance_3d': conductance_3d,
+                'bias_values': bias_values,
+                'shape': conductance_3d.shape,
+                'units': 'S (Siemens)',
+                'method': 'central_difference'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"電導率計算失敗: {str(e)}")
+            return {
+                'conductance_3d': np.zeros_like(self.data_3d),
+                'error': str(e)
+            }
 
 
 # 便利函數

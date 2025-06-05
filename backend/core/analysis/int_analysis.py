@@ -9,6 +9,10 @@ import plotly.graph_objects as go
 from plotly.io import to_image
 import plotly.io as pio
 
+# 導入我們的算法工具 / Import our algorithm tools
+from ..utils.algorithms import AlgorithmUtils
+from ..mathematics.geometry import GeometryUtils
+
 # 設置預設輸出格式為網頁
 pio.templates.default = "plotly_white"
 
@@ -419,4 +423,222 @@ class IntAnalysis:
                 "median": 0.0,
                 "std": 0.0,
                 "rms": 0.0
+            }
+
+    @staticmethod
+    def calculate_surface_roughness(image_data, mask=None):
+        """
+        計算表面粗糙度參數
+        Calculate surface roughness parameters
+        
+        使用我們的算法庫計算標準粗糙度參數
+        Uses our algorithm library to calculate standard roughness parameters
+        
+        Args:
+            image_data: 2D numpy數組，形貌數據 / 2D numpy array, topography data
+            mask: 可選遮罩，標記有效區域 / Optional mask for valid regions
+            
+        Returns:
+            dict: 包含各種粗糙度參數 / Contains various roughness parameters
+        """
+        try:
+            return AlgorithmUtils.calculate_roughness(image_data, mask)
+        except Exception as e:
+            logger.error(f"粗糙度計算失敗: {str(e)}")
+            return {
+                'Ra': 0.0, 'Rq': 0.0, 'Rz': 0.0, 
+                'Rp': 0.0, 'Rv': 0.0, 'mean': 0.0, 'std': 0.0
+            }
+
+    @staticmethod
+    def get_line_profile_bresenham(image_data, start_point, end_point, physical_scale=1.0, method='bresenham'):
+        """
+        使用 Bresenham 算法或插值獲取線性剖面
+        Get line profile using Bresenham algorithm or interpolation
+        
+        Args:
+            image_data: 2D numpy數組，形貌數據 / 2D numpy array, topography data
+            start_point: 起始點座標 (y, x) / Start point coordinates (y, x)
+            end_point: 終止點座標 (y, x) / End point coordinates (y, x)
+            physical_scale: 物理單位尺度 (nm/pixel) / Physical scale (nm/pixel)
+            method: 採樣方法 ('bresenham', 'interpolation') / Sampling method
+            
+        Returns:
+            dict: 包含剖面數據的字典 / Dictionary containing profile data
+        """
+        try:
+            # 確保點座標在圖像範圍內 / Ensure points are within image bounds
+            y_size, x_size = image_data.shape
+            start_y, start_x = max(0, min(start_point[0], y_size-1)), max(0, min(start_point[1], x_size-1))
+            end_y, end_x = max(0, min(end_point[0], y_size-1)), max(0, min(end_point[1], x_size-1))
+            
+            if method == 'bresenham':
+                # 使用 Bresenham 算法獲取離散像素點 / Use Bresenham algorithm for discrete pixels
+                x_coords, y_coords = GeometryUtils.bresenham_line_numpy((start_x, start_y), (end_x, end_y))
+                
+                # 確保座標在範圍內 / Ensure coordinates are within bounds
+                x_coords = np.clip(x_coords, 0, x_size-1)
+                y_coords = np.clip(y_coords, 0, y_size-1)
+                
+                # 直接從像素點獲取高度值 / Get height values directly from pixels
+                heights = image_data[y_coords, x_coords]
+                
+                # 計算距離 / Calculate distances
+                pixel_distances = np.sqrt(np.diff(x_coords.astype(float))**2 + np.diff(y_coords.astype(float))**2)
+                distances = np.concatenate([[0], np.cumsum(pixel_distances)]) * physical_scale
+                
+            else:  # 使用插值方法 / Use interpolation method
+                length = np.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+                num_points = max(int(np.ceil(length)) * 2, 10)  # 確保足夠的取樣點
+                
+                y_indices = np.linspace(start_y, end_y, num_points)
+                x_indices = np.linspace(start_x, end_x, num_points)
+                
+                # 雙線性插值 / Bilinear interpolation
+                heights = ndimage.map_coordinates(image_data, [y_indices, x_indices], order=1)
+                
+                # 物理距離 / Physical distances
+                physical_length = length * physical_scale
+                distances = np.linspace(0, physical_length, num_points)
+            
+            # 計算統計數據 / Calculate statistics
+            stats = {
+                'min': float(np.min(heights)),
+                'max': float(np.max(heights)),
+                'mean': float(np.mean(heights)),
+                'median': float(np.median(heights)),
+                'std': float(np.std(heights)),
+                'range': float(np.max(heights) - np.min(heights)),
+                'rms': float(np.sqrt(np.mean(np.square(heights - np.mean(heights)))))
+            }
+            
+            return {
+                'distance': distances.tolist(),
+                'height': heights.tolist(),
+                'length': float(distances[-1]),
+                'stats': stats,
+                'method': method,
+                'num_points': len(heights)
+            }
+            
+        except Exception as e:
+            logger.error(f"獲取剖面失敗 ({method}): {str(e)}")
+            return {
+                'distance': [],
+                'height': [],
+                'length': 0,
+                'stats': {},
+                'method': method,
+                'num_points': 0
+            }
+
+    @staticmethod
+    def apply_advanced_flatten(image_data, method='polynomial_2d', order=1):
+        """
+        應用高級平面化方法
+        Apply advanced flattening methods
+        
+        使用我們的算法庫進行高級平面校正
+        Uses our algorithm library for advanced plane correction
+        
+        Args:
+            image_data: 2D numpy數組，形貌數據 / 2D numpy array, topography data
+            method: 平面化方法 ('polynomial_2d', 'median_filter') / Flattening method
+            order: 多項式階數（當 method='polynomial_2d' 時）/ Polynomial order
+            
+        Returns:
+            dict: 包含處理結果的字典 / Dictionary containing processing results
+        """
+        try:
+            result = image_data.copy()
+            y_size, x_size = result.shape
+            
+            if method == 'polynomial_2d':
+                # 創建座標網格 / Create coordinate grids
+                x, y = np.meshgrid(np.arange(x_size), np.arange(y_size))
+                
+                # 使用 2D 多項式擬合 / Use 2D polynomial fitting
+                fit_result = AlgorithmUtils.polynomial_fit_2d(x, y, result, order=order)
+                
+                # 從原始數據中減去擬合面 / Subtract fitted surface from original data
+                result = result - fit_result['fitted_surface']
+                
+                return {
+                    'flattened_data': result,
+                    'fitted_surface': fit_result['fitted_surface'],
+                    'coefficients': fit_result['coefficients'].tolist(),
+                    'method': method,
+                    'order': order
+                }
+                
+            elif method == 'median_filter':
+                # 使用中值濾波去除尖峰噪聲 / Use median filter to remove spike noise
+                filtered = AlgorithmUtils.median_filter_2d(result, size=3)
+                
+                return {
+                    'flattened_data': filtered,
+                    'method': method
+                }
+                
+            else:
+                raise ValueError(f"不支援的平面化方法: {method}")
+                
+        except Exception as e:
+            logger.error(f"高級平面化失敗 ({method}): {str(e)}")
+            return {
+                'flattened_data': image_data,
+                'method': method,
+                'error': str(e)
+            }
+
+    @staticmethod
+    def detect_surface_features(image_data, feature_type='peaks', **kwargs):
+        """
+        檢測表面特徵
+        Detect surface features
+        
+        Args:
+            image_data: 2D numpy數組，形貌數據 / 2D numpy array, topography data
+            feature_type: 特徵類型 ('peaks', 'valleys') / Feature type
+            **kwargs: 檢測參數 / Detection parameters
+            
+        Returns:
+            dict: 檢測結果 / Detection results
+        """
+        try:
+            if feature_type == 'peaks':
+                # 對每一行檢測峰值 / Detect peaks in each row
+                all_peaks = []
+                for i, row in enumerate(image_data):
+                    peaks, properties = AlgorithmUtils.find_peaks(
+                        row if feature_type == 'peaks' else -row,
+                        prominence=kwargs.get('prominence', None),
+                        distance=kwargs.get('distance', None),
+                        height=kwargs.get('height', None)
+                    )
+                    
+                    # 添加行信息 / Add row information
+                    for peak in peaks:
+                        all_peaks.append({
+                            'row': i,
+                            'col': peak,
+                            'height': float(image_data[i, peak])
+                        })
+                
+                return {
+                    'features': all_peaks,
+                    'count': len(all_peaks),
+                    'type': feature_type
+                }
+                
+            else:
+                raise ValueError(f"不支援的特徵類型: {feature_type}")
+                
+        except Exception as e:
+            logger.error(f"特徵檢測失敗: {str(e)}")
+            return {
+                'features': [],
+                'count': 0,
+                'type': feature_type,
+                'error': str(e)
             }
