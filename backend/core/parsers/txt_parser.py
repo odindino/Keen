@@ -12,6 +12,7 @@ class TxtParser:
         self.metadata = {}
         self.int_files = []
         self.dat_files = []
+        self.signal_types = set()  # 存儲實驗中出現的所有訊號類型
     
     def parse(self):
         """解析 .txt 檔案以提取元數據和檔案描述"""
@@ -28,7 +29,8 @@ class TxtParser:
             return {
                 "experiment_info": self.metadata,
                 "int_files": self.int_files,
-                "dat_files": self.dat_files
+                "dat_files": self.dat_files,
+                "signal_types": list(self.signal_types)  # 轉換為列表返回
             }
         except Exception as e:
             logger.error(f"解析 TXT 檔案時出錯: {str(e)}")
@@ -112,6 +114,11 @@ class TxtParser:
         if offset_match:
             desc['offset'] = offset_match.group(1).strip()
         
+        # 提取訊號類型和方向
+        signal_type, direction = self._extract_signal_type_and_direction(filename)
+        desc['signal_type'] = signal_type
+        desc['direction'] = direction
+        
         self.int_files.append(desc)
     
     def _parse_dat_file_description(self, desc_content, filename):
@@ -153,6 +160,11 @@ class TxtParser:
         average_match = re.search(r'Average\s*:\s*([^\n]+)', desc_content)
         if average_match:
             desc['average'] = int(average_match.group(1).strip())
+        
+        # 提取訊號類型和方向
+        signal_type, direction = self._extract_signal_type_and_direction(filename)
+        desc['signal_type'] = signal_type
+        desc['direction'] = direction
         
         self.dat_files.append(desc)
     
@@ -240,6 +252,67 @@ class TxtParser:
         except Exception as e:
             logger.warning(f"解析 Slewrate 行時出錯: {value}, 錯誤: {str(e)}")
             return {}
+    
+    def _extract_signal_type_and_direction(self, filename):
+        """
+        從檔案名稱中提取訊號類型和掃描方向
+        範例: '20250521_Janus Stacking SiO2_13K_113Lia1RFwd.int' 
+        -> signal_type='Lia1R', direction='Fwd'
+        """
+        try:
+            # 檢查是否有 Matrix 後綴（表示是 DAT 檔案的 CITS 數據）
+            if "_Matrix" in filename:
+                # 例如：20250521_Janus Stacking SiO2_13K_113Lia1R_Matrix.dat
+                signal_type = filename.split('_Matrix')[0].split('_')[-1]
+                if signal_type.startswith('113'):  # 忽略前綴序號
+                    signal_type = signal_type[3:]
+                direction = None
+            else:
+                # 尋找常見的訊號類型模式
+                signal_patterns = [
+                    "Topo", "Lia1X", "Lia1Y", "Lia1R", "Lia2X", "Lia2Y", "Lia2R", 
+                    "Lia3X", "Lia3Y", "Lia3R", "It_to_PC", "InA", "QPlus", 
+                    "Bias", "Frequency", "Drive", "Phase", "df"
+                ]
+                
+                # 尋找訊號類型
+                signal_type = None
+                for pattern in signal_patterns:
+                    if pattern in filename:
+                        signal_type = pattern
+                        break
+                
+                # 如果找不到匹配的訊號類型，嘗試一般性規則
+                if signal_type is None:
+                    # 取最後一段作為信號類型和方向
+                    name_parts = filename.split('_')[-1].replace('.int', '').replace('.dat', '')
+                    # 尋找 Fwd 或 Bwd
+                    if "Fwd" in name_parts:
+                        signal_type = name_parts.replace("Fwd", "")
+                        direction = "Fwd"
+                    elif "Bwd" in name_parts:
+                        signal_type = name_parts.replace("Bwd", "")
+                        direction = "Bwd"
+                    else:
+                        signal_type = name_parts
+                        direction = None
+                else:
+                    # 如果找到了訊號類型，檢查方向
+                    if "Fwd" in filename:
+                        direction = "Fwd"
+                    elif "Bwd" in filename:
+                        direction = "Bwd"
+                    else:
+                        direction = None
+            
+            # 添加到訊號類型集合中
+            if signal_type:
+                self.signal_types.add(signal_type)
+                
+            return signal_type, direction
+        except Exception as e:
+            logger.warning(f"解析檔案名稱時出錯: {filename}, 錯誤: {str(e)}")
+            return "unknown", None
     
     def get_int_files(self):
         """返回 .int 檔案描述列表"""
