@@ -7,9 +7,11 @@ Provides common base functionality for all analyzers
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
 import logging
 from datetime import datetime
+
+from ..data_models import SPMData, AnalysisState
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +25,20 @@ class BaseAnalyzer(ABC):
     All analyzers should inherit from this class and implement required methods
     """
     
-    def __init__(self, main_analyzer: 'MainAnalyzer'):
+    def __init__(self, data: SPMData):
         """
         初始化分析器
         Initialize analyzer
         
         Args:
-            main_analyzer: 主分析器實例 / Main analyzer instance
+            data: SPM 數據實例 / SPM data instance (TopoData, CitsData, StsData, TxtData)
         """
-        self.main_analyzer = main_analyzer
+        self.data = data
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
-        # 狀態管理 / State management
-        self.state = {
-            'initialized': False,
-            'last_analysis': None,
-            'analysis_count': 0,
-            'errors': [],
-            'warnings': []
-        }
+        # 使用新的分析狀態管理 / Use new analysis state management
+        self.state = AnalysisState(analyzer_type=self.__class__.__name__)
+        self.state.initialized = True
         
         # 分析歷史 / Analysis history
         self.analysis_history: List[Dict] = []
@@ -49,21 +46,18 @@ class BaseAnalyzer(ABC):
         # 快取數據 / Cached data
         self.cached_results: Dict[str, Any] = {}
         
-        # 標記為已初始化 / Mark as initialized
-        self.state['initialized'] = True
-        self.logger.info(f"{self.__class__.__name__} 初始化完成")
+        self.logger.info(f"{self.__class__.__name__} 初始化完成，數據類型: {type(self.data).__name__}")
     
     @abstractmethod
-    def analyze(self, data: Any, **kwargs) -> Dict[str, Any]:
+    def analyze(self, **kwargs) -> Dict[str, Any]:
         """
         核心分析方法（抽象方法）
         Core analysis method (abstract)
         
-        子類必須實現此方法
-        Subclasses must implement this method
+        子類必須實現此方法，使用 self.data 進行分析
+        Subclasses must implement this method, using self.data for analysis
         
         Args:
-            data: 輸入數據 / Input data
             **kwargs: 額外參數 / Additional parameters
             
         Returns:
@@ -79,7 +73,7 @@ class BaseAnalyzer(ABC):
         Returns:
             Dict: 分析結果字典 / Analysis results dictionary
         """
-        return self.state.get('last_analysis', {})
+        return self.state.last_analysis or {}
     
     def get_history(self) -> List[Dict]:
         """
@@ -145,8 +139,7 @@ class BaseAnalyzer(ABC):
         }
         
         self.analysis_history.append(record)
-        self.state['last_analysis'] = result
-        self.state['analysis_count'] += 1
+        self.state.record_analysis(result, analysis_type)
         
         # 限制歷史記錄數量 / Limit history size
         if len(self.analysis_history) > 50:
@@ -186,11 +179,7 @@ class BaseAnalyzer(ABC):
         Args:
             error_msg: 錯誤信息 / Error message
         """
-        self.state['errors'].append({
-            'timestamp': datetime.now().isoformat(),
-            'message': error_msg,
-            'analyzer': self.__class__.__name__
-        })
+        self.state.add_error(error_msg)
         self.logger.error(f"{self.__class__.__name__}: {error_msg}")
     
     def _add_warning(self, warning_msg: str) -> None:
@@ -201,11 +190,7 @@ class BaseAnalyzer(ABC):
         Args:
             warning_msg: 警告信息 / Warning message
         """
-        self.state['warnings'].append({
-            'timestamp': datetime.now().isoformat(),
-            'message': warning_msg,
-            'analyzer': self.__class__.__name__
-        })
+        self.state.add_warning(warning_msg)
         self.logger.warning(f"{self.__class__.__name__}: {warning_msg}")
     
     def get_status(self) -> Dict[str, Any]:
@@ -218,12 +203,13 @@ class BaseAnalyzer(ABC):
         """
         return {
             'analyzer_type': self.__class__.__name__,
-            'initialized': self.state['initialized'],
-            'analysis_count': self.state['analysis_count'],
+            'initialized': self.state.initialized,
+            'analysis_count': self.state.analysis_count,
             'last_analysis_time': self.analysis_history[-1]['timestamp'] if self.analysis_history else None,
-            'error_count': len(self.state['errors']),
-            'warning_count': len(self.state['warnings']),
-            'cache_info': self.get_cache_info()
+            'error_count': len(self.state.errors),
+            'warning_count': len(self.state.warnings),
+            'cache_info': self.get_cache_info(),
+            'data_type': type(self.data).__name__
         }
     
     def reset(self) -> None:
@@ -231,30 +217,46 @@ class BaseAnalyzer(ABC):
         重置分析器狀態
         Reset analyzer state
         """
-        self.state = {
-            'initialized': True,
-            'last_analysis': None,
-            'analysis_count': 0,
-            'errors': [],
-            'warnings': []
-        }
+        self.state = AnalysisState(analyzer_type=self.__class__.__name__)
+        self.state.initialized = True
         self.analysis_history.clear()
         self.clear_cache()
         self.logger.info(f"{self.__class__.__name__} 已重置")
     
-    def validate_input(self, data: Any, **kwargs) -> bool:
+    def validate_input(self, **kwargs) -> bool:
         """
         驗證輸入數據
         Validate input data
         
         Args:
-            data: 輸入數據 / Input data
             **kwargs: 額外參數 / Additional parameters
             
         Returns:
             bool: 是否有效 / Whether valid
         """
-        if data is None:
-            self._add_error("輸入數據不能為空")
+        if self.data is None:
+            self._add_error("數據不能為空")
             return False
         return True
+    
+    def _create_error_result(self, error_msg: str) -> Dict[str, Any]:
+        """
+        創建錯誤結果
+        Create error result
+        
+        Args:
+            error_msg: 錯誤信息 / Error message
+            
+        Returns:
+            Dict: 錯誤結果 / Error result
+        """
+        return {
+            'success': False,
+            'error': error_msg,
+            'data': {},
+            'plots': {},
+            'metadata': {
+                'analyzer_type': self.__class__.__name__,
+                'data_type': type(self.data).__name__
+            }
+        }

@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict
 
+from ..data_models import ParseResult
+
 logger = logging.getLogger(__name__)
 
 class DatParser:
@@ -12,21 +14,27 @@ class DatParser:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
-    def parse(self, file_path: str, dat_info: dict = None):
+    def parse(self, file_path: str, dat_info: dict = None) -> ParseResult:
         """
         解析 DAT 檔案
+        Parse DAT file
         
         Parameters:
         -----------
         file_path : str
-            DAT 檔案路徑
+            DAT 檔案路徑 / DAT file path
         dat_info : dict
-            從 TxtParser 獲得的 DAT 檔案描述資訊
+            從 TxtParser 獲得的 DAT 檔案描述資訊 / DAT file description from TxtParser
             
         Returns:
         --------
-        dict : 解析後的數據
+        ParseResult : 標準化的解析結果 / Standardized parse result
         """
+        result = ParseResult(
+            metadata={'path': file_path, 'type': 'dat'},
+            data=None,
+            parser_type='DatParser'
+        )
         try:
             self.logger.info(f"開始解析 DAT 檔案: {file_path}")
             
@@ -41,14 +49,16 @@ class DatParser:
             
             # 4. 根據量測模式處理數據
             if dat_info and dat_info.get('measurement_mode') == 'CITS':
-                result = self._process_cits_data(parsed_data, header_info, dat_info)
+                processed_data = self._process_cits_data(parsed_data, header_info, dat_info)
             else:
-                result = self._process_sts_data(parsed_data, header_info, dat_info)
+                processed_data = self._process_sts_data(parsed_data, header_info, dat_info)
             
-            # 5. 添加基本資訊
-            result.update({
-                'file_path': file_path,
+            # 5. 構建標準化結果
+            result.data = processed_data
+            result.metadata.update({
                 'measurement_type': dat_info.get('measurement_type', 'unknown') if dat_info else 'unknown',
+                'measurement_mode': processed_data.get('measurement_mode', 'unknown'),
+                'data_shape': processed_data.get('data_3d', processed_data.get('data_2d', np.array([]))).shape,
                 'units': {
                     'time': header_info['time_unit'],
                     'distance': header_info['distance_unit'], 
@@ -56,12 +66,14 @@ class DatParser:
                 }
             })
             
-            self.logger.info(f"DAT 檔案解析完成: {result['measurement_mode']} 模式")
+            self.logger.info(f"DAT 檔案解析完成: {processed_data.get('measurement_mode', 'unknown')} 模式")
             return result
             
         except Exception as e:
-            self.logger.error(f"解析 DAT 檔案失敗: {e}")
-            raise
+            error_msg = f"解析 DAT 檔案失敗: {str(e)}"
+            self.logger.error(error_msg)
+            result.add_error(error_msg)
+            return result
     
     def _read_file_structure(self, file_path):
         """讀取檔案並驗證基本結構"""

@@ -1,6 +1,9 @@
 import os
 import re
 import logging
+from datetime import datetime
+
+from ..data_models import ParseResult
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +17,20 @@ class TxtParser:
         self.dat_files = []
         self.signal_types = set()  # 存儲實驗中出現的所有訊號類型
     
-    def parse(self):
-        """解析 .txt 檔案以提取元數據和檔案描述"""
+    def parse(self) -> ParseResult:
+        """
+        解析 .txt 檔案以提取元數據和檔案描述
+        Parse .txt file to extract metadata and file descriptions
+        
+        Returns:
+            ParseResult: 標準化的解析結果 / Standardized parse result
+        """
+        result = ParseResult(
+            metadata={'path': self.file_path, 'type': 'txt'},
+            data=None,
+            parser_type='TxtParser'
+        )
+        
         try:
             with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
@@ -26,15 +41,30 @@ class TxtParser:
             # 解析檔案描述
             self._parse_file_descriptions(content)
             
-            return {
+            # 構建標準化的結果數據
+            parsed_data = {
                 "experiment_info": self.metadata,
                 "int_files": self.int_files,
                 "dat_files": self.dat_files,
                 "signal_types": list(self.signal_types)  # 轉換為列表返回
             }
+            
+            result.data = parsed_data
+            result.metadata.update({
+                'experiment_name': self.metadata.get('experiment_name', 'Unknown'),
+                'total_int_files': len(self.int_files),
+                'total_dat_files': len(self.dat_files),
+                'signal_types_count': len(self.signal_types)
+            })
+            
+            logger.info(f"TXT 檔案解析成功: {self.file_path}")
+            return result
+            
         except Exception as e:
-            logger.error(f"解析 TXT 檔案時出錯: {str(e)}")
-            raise
+            error_msg = f"解析 TXT 檔案時出錯: {str(e)}"
+            logger.error(error_msg)
+            result.add_error(error_msg)
+            return result
     
     def _parse_basic_parameters(self, content):
         """解析基本參數如掃描範圍、像素數等"""

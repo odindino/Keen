@@ -10,8 +10,10 @@ import os
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
+from pathlib import Path
 
 from .base_analyzer import BaseAnalyzer
+from ..data_models import TxtData
 
 
 class TxtAnalyzer(BaseAnalyzer):
@@ -23,51 +25,53 @@ class TxtAnalyzer(BaseAnalyzer):
     Provides complete analysis workflow for TXT (experiment parameter) files
     """
     
-    def __init__(self, main_analyzer):
+    def __init__(self, txt_data: TxtData):
         """
         初始化 TXT 分析器
         Initialize TXT analyzer
         
         Args:
-            main_analyzer: 主分析器實例 / Main analyzer instance
+            txt_data: TxtData 實例 / TxtData instance
         """
-        super().__init__(main_analyzer)
+        super().__init__(txt_data)
         
         # TXT 特定狀態 / TXT-specific state
-        self.experiment_info: Optional[Dict] = None
-        self.int_files_info: List[Dict] = []
-        self.dat_files_info: List[Dict] = []
         self.file_path: Optional[str] = None
         
         # 驗證結果 / Validation results
         self.validation_results: Optional[Dict] = None
         self.file_availability: Optional[Dict] = None
     
-    def analyze(self, txt_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def set_file_path(self, file_path: str) -> None:
+        """
+        設置 TXT 文件路徑
+        Set TXT file path
+        
+        Args:
+            file_path: 文件路徑 / File path
+        """
+        self.file_path = file_path
+    
+    def analyze(self, **kwargs) -> Dict[str, Any]:
         """
         分析 TXT 實驗參數數據
         Analyze TXT experiment parameter data
         
         Args:
-            txt_data: TXT 數據字典 / TXT data dictionary
-                From TxtParser.parse() containing:
-                - 'experiment_info': dict of experiment parameters
-                - 'int_files': list of int file descriptions
-                - 'dat_files': list of dat file descriptions
-            **kwargs: 額外參數，包含 'file_path' / Additional parameters including 'file_path'
+            **kwargs: 額外參數，可包含 'file_path' / Additional parameters, may include 'file_path'
             
         Returns:
             Dict: 分析結果 / Analysis results
         """
         try:
-            if not self.validate_input(txt_data, **kwargs):
+            if not self.validate_input(**kwargs):
                 return self._create_error_result("輸入驗證失敗")
             
-            # 保存數據 / Save data
-            self.experiment_info = txt_data.get('experiment_info', {})
-            self.int_files_info = txt_data.get('int_files', [])
-            self.dat_files_info = txt_data.get('dat_files', [])
-            self.file_path = kwargs.get('file_path')
+            # 更新文件路徑 / Update file path if provided
+            if 'file_path' in kwargs:
+                self.file_path = kwargs['file_path']
+            
+            txt_data = self.data
             
             # 分析實驗參數 / Analyze experiment parameters
             param_analysis = self._analyze_experiment_parameters()
@@ -87,7 +91,17 @@ class TxtAnalyzer(BaseAnalyzer):
             result = {
                 'success': True,
                 'data': {
-                    'experiment_info': self.experiment_info,
+                    'experiment_info': txt_data.experiment_info,
+                    'scan_parameters': {
+                        'x_pixel': txt_data.scan_parameters.x_pixel,
+                        'y_pixel': txt_data.scan_parameters.y_pixel,
+                        'x_range': txt_data.scan_parameters.x_range,
+                        'y_range': txt_data.scan_parameters.y_range,
+                        'pixel_scale_x': txt_data.scan_parameters.pixel_scale_x,
+                        'pixel_scale_y': txt_data.scan_parameters.pixel_scale_y,
+                        'aspect_ratio': txt_data.scan_parameters.aspect_ratio,
+                        'total_pixels': txt_data.scan_parameters.total_pixels
+                    },
                     'parameter_analysis': param_analysis,
                     'file_analysis': file_analysis,
                     'availability_analysis': availability_analysis,
@@ -97,9 +111,12 @@ class TxtAnalyzer(BaseAnalyzer):
                 'plots': {},  # TXT files typically don't have plots
                 'metadata': {
                     'analyzer_type': 'TXT',
+                    'data_type': 'TxtData',
                     'file_path': self.file_path,
-                    'n_int_files': len(self.int_files_info),
-                    'n_dat_files': len(self.dat_files_info)
+                    'experiment_name': txt_data.experiment_name,
+                    'n_int_files': len(txt_data.int_files),
+                    'n_dat_files': len(txt_data.dat_files),
+                    'total_files': txt_data.total_files
                 }
             }
             
@@ -119,6 +136,7 @@ class TxtAnalyzer(BaseAnalyzer):
         Analyze experiment parameters
         """
         try:
+            txt_data = self.data
             analysis = {
                 'scan_info': {},
                 'tunneling_info': {},
@@ -127,50 +145,43 @@ class TxtAnalyzer(BaseAnalyzer):
             }
             
             # 掃描信息 / Scan information
-            if 'xPixel' in self.experiment_info and 'yPixel' in self.experiment_info:
-                x_pixels = int(self.experiment_info['xPixel'])
-                y_pixels = int(self.experiment_info['yPixel'])
-                analysis['scan_info']['resolution'] = [x_pixels, y_pixels]
-                analysis['scan_info']['total_pixels'] = x_pixels * y_pixels
+            scan_params = txt_data.scan_parameters
+            analysis['scan_info'] = {
+                'resolution': [scan_params.x_pixel, scan_params.y_pixel],
+                'total_pixels': scan_params.total_pixels,
+                'scan_size': [scan_params.x_range, scan_params.y_range],
+                'pixel_size': [scan_params.pixel_scale_x, scan_params.pixel_scale_y],
+                'aspect_ratio': scan_params.aspect_ratio
+            }
             
-            if 'XScanRange' in self.experiment_info and 'YScanRange' in self.experiment_info:
-                x_range = float(self.experiment_info['XScanRange'])
-                y_range = float(self.experiment_info['YScanRange'])
-                analysis['scan_info']['scan_size'] = [x_range, y_range]
-                
-                if 'resolution' in analysis['scan_info']:
-                    x_pixels = analysis['scan_info']['resolution'][0]
-                    y_pixels = analysis['scan_info']['resolution'][1]
-                    analysis['scan_info']['pixel_size'] = [
-                        x_range / x_pixels, y_range / y_pixels
-                    ]
+            exp_info = txt_data.experiment_info
             
             # 隧道參數 / Tunneling parameters
-            if 'Bias' in self.experiment_info:
-                analysis['tunneling_info']['bias_voltage'] = float(self.experiment_info['Bias'])
+            if 'Bias' in exp_info:
+                analysis['tunneling_info']['bias_voltage'] = float(exp_info['Bias'])
             
-            if 'SetPoint' in self.experiment_info:
-                analysis['tunneling_info']['setpoint_current'] = float(self.experiment_info['SetPoint'])
+            if 'SetPoint' in exp_info:
+                analysis['tunneling_info']['setpoint_current'] = float(exp_info['SetPoint'])
             
             # 反饋參數 / Feedback parameters
-            if 'Ki' in self.experiment_info and 'Kp' in self.experiment_info:
-                analysis['feedback_info']['ki'] = float(self.experiment_info['Ki'])
-                analysis['feedback_info']['kp'] = float(self.experiment_info['Kp'])
+            if 'Ki' in exp_info and 'Kp' in exp_info:
+                analysis['feedback_info']['ki'] = float(exp_info['Ki'])
+                analysis['feedback_info']['kp'] = float(exp_info['Kp'])
             
             # 時間信息 / Timing information
-            if 'Date' in self.experiment_info and 'Time' in self.experiment_info:
-                analysis['timing_info']['date'] = self.experiment_info['Date']
-                analysis['timing_info']['time'] = self.experiment_info['Time']
+            if 'Date' in exp_info and 'Time' in exp_info:
+                analysis['timing_info']['date'] = exp_info['Date']
+                analysis['timing_info']['time'] = exp_info['Time']
             
-            if 'Speed' in self.experiment_info:
+            if 'Speed' in exp_info:
                 try:
                     # 處理可能包含單位的速度值
-                    speed_str = str(self.experiment_info['Speed']).strip()
+                    speed_str = str(exp_info['Speed']).strip()
                     # 移除可能的單位或額外文字
                     speed_num = speed_str.split()[0]  # 取第一個數值部分
                     analysis['timing_info']['scan_speed'] = float(speed_num)
                 except (ValueError, IndexError):
-                    self.logger.warning(f"無法解析掃描速度: {self.experiment_info['Speed']}")
+                    self.logger.warning(f"無法解析掃描速度: {exp_info['Speed']}")
                     analysis['timing_info']['scan_speed'] = None
             
             return analysis
@@ -185,28 +196,33 @@ class TxtAnalyzer(BaseAnalyzer):
         Analyze file descriptions
         """
         try:
+            txt_data = self.data
             analysis = {
                 'int_files_summary': {},
                 'dat_files_summary': {},
-                'measurement_modes': []
+                'measurement_modes': [],
+                'signal_types': txt_data.signal_types
             }
             
             # INT 文件分析 / INT files analysis
+            int_captions = [f.get('caption', 'Unknown') for f in txt_data.int_files]
             analysis['int_files_summary'] = {
-                'count': len(self.int_files_info),
-                'types': list(set(f.get('caption', 'Unknown') for f in self.int_files_info))
+                'count': len(txt_data.int_files),
+                'types': list(set(int_captions)),
+                'details': txt_data.int_files
             }
             
             # DAT 文件分析 / DAT files analysis
             measurement_modes = []
-            for dat_file in self.dat_files_info:
+            for dat_file in txt_data.dat_files:
                 mode = dat_file.get('measurement_mode', 'unknown')
                 if mode not in measurement_modes:
                     measurement_modes.append(mode)
             
             analysis['dat_files_summary'] = {
-                'count': len(self.dat_files_info),
-                'measurement_modes': measurement_modes
+                'count': len(txt_data.dat_files),
+                'measurement_modes': measurement_modes,
+                'details': txt_data.dat_files
             }
             
             analysis['measurement_modes'] = measurement_modes
@@ -235,45 +251,51 @@ class TxtAnalyzer(BaseAnalyzer):
                 availability['error'] = "未提供 TXT 文件路徑"
                 return availability
             
-            base_dir = os.path.dirname(self.file_path)
+            base_dir = Path(self.file_path).parent
+            txt_data = self.data
             
             # 檢查 INT 文件 / Check INT files
-            for int_file in self.int_files_info:
+            for int_file in txt_data.int_files:
                 filename = int_file['filename']
-                file_path = os.path.join(base_dir, filename)
+                file_path = base_dir / filename
                 
-                if os.path.exists(file_path):
+                if file_path.exists():
                     availability['available_files'].append(filename)
                     availability['file_details'][filename] = {
                         'available': True,
-                        'size': os.path.getsize(file_path),
-                        'type': 'int'
+                        'size': file_path.stat().st_size,
+                        'type': 'int',
+                        'caption': int_file.get('caption', 'Unknown'),
+                        'scale': int_file.get('scale', 'Unknown')
                     }
                 else:
                     availability['missing_files'].append(filename)
                     availability['file_details'][filename] = {
                         'available': False,
-                        'type': 'int'
+                        'type': 'int',
+                        'caption': int_file.get('caption', 'Unknown')
                     }
                     availability['all_files_available'] = False
             
             # 檢查 DAT 文件 / Check DAT files
-            for dat_file in self.dat_files_info:
+            for dat_file in txt_data.dat_files:
                 filename = dat_file['filename']
-                file_path = os.path.join(base_dir, filename)
+                file_path = base_dir / filename
                 
-                if os.path.exists(file_path):
+                if file_path.exists():
                     availability['available_files'].append(filename)
                     availability['file_details'][filename] = {
                         'available': True,
-                        'size': os.path.getsize(file_path),
-                        'type': 'dat'
+                        'size': file_path.stat().st_size,
+                        'type': 'dat',
+                        'measurement_mode': dat_file.get('measurement_mode', 'unknown')
                     }
                 else:
                     availability['missing_files'].append(filename)
                     availability['file_details'][filename] = {
                         'available': False,
-                        'type': 'dat'
+                        'type': 'dat',
+                        'measurement_mode': dat_file.get('measurement_mode', 'unknown')
                     }
                     availability['all_files_available'] = False
             
@@ -290,6 +312,7 @@ class TxtAnalyzer(BaseAnalyzer):
         Detect experiment type
         """
         try:
+            txt_data = self.data
             exp_type = {
                 'primary_type': 'Unknown',
                 'secondary_types': [],
@@ -297,9 +320,9 @@ class TxtAnalyzer(BaseAnalyzer):
                 'description': ''
             }
             
-            has_topo = len(self.int_files_info) > 0
-            has_cits = any(f.get('measurement_mode') == 'CITS' for f in self.dat_files_info)
-            has_sts = any(f.get('measurement_mode') == 'STS' for f in self.dat_files_info)
+            has_topo = len(txt_data.int_files) > 0
+            has_cits = any(f.get('measurement_mode') == 'CITS' for f in txt_data.dat_files)
+            has_sts = any(f.get('measurement_mode') == 'STS' for f in txt_data.dat_files)
             
             if has_topo and has_cits:
                 exp_type['primary_type'] = 'Combined STM/CITS'
@@ -342,6 +365,7 @@ class TxtAnalyzer(BaseAnalyzer):
         Generate experiment summary
         """
         try:
+            txt_data = self.data
             summary = {
                 'experiment_id': '',
                 'user': '',
@@ -354,26 +378,28 @@ class TxtAnalyzer(BaseAnalyzer):
             
             # 基本信息 / Basic information
             if self.file_path:
-                summary['experiment_id'] = os.path.basename(self.file_path).replace('.txt', '')
+                summary['experiment_id'] = Path(self.file_path).stem
             
-            if 'UserName' in self.experiment_info:
-                summary['user'] = self.experiment_info['UserName']
+            exp_info = txt_data.experiment_info
+            if 'UserName' in exp_info:
+                summary['user'] = exp_info['UserName']
             
-            if 'Date' in self.experiment_info and 'Time' in self.experiment_info:
-                summary['datetime'] = f"{self.experiment_info['Date']} {self.experiment_info['Time']}"
+            if 'Date' in exp_info and 'Time' in exp_info:
+                summary['datetime'] = f"{exp_info['Date']} {exp_info['Time']}"
             
             # 掃描參數摘要 / Scan parameters summary
-            if 'xPixel' in self.experiment_info and 'yPixel' in self.experiment_info:
-                summary['scan_parameters']['resolution'] = f"{self.experiment_info['xPixel']}×{self.experiment_info['yPixel']}"
-            
-            if 'XScanRange' in self.experiment_info and 'YScanRange' in self.experiment_info:
-                summary['scan_parameters']['size'] = f"{self.experiment_info['XScanRange']}×{self.experiment_info['YScanRange']} nm"
+            scan_params = txt_data.scan_parameters
+            summary['scan_parameters'] = {
+                'resolution': f"{scan_params.x_pixel}×{scan_params.y_pixel}",
+                'size': f"{scan_params.x_range}×{scan_params.y_range} nm",
+                'pixel_size': f"{scan_params.pixel_scale_x:.3f}×{scan_params.pixel_scale_y:.3f} nm/pixel"
+            }
             
             # 文件統計 / File statistics
             summary['file_counts'] = {
-                'int_files': len(self.int_files_info),
-                'dat_files': len(self.dat_files_info),
-                'total_files': len(self.int_files_info) + len(self.dat_files_info)
+                'int_files': len(txt_data.int_files),
+                'dat_files': len(txt_data.dat_files),
+                'total_files': txt_data.total_files
             }
             
             return summary
@@ -382,35 +408,52 @@ class TxtAnalyzer(BaseAnalyzer):
             self.logger.error(f"實驗摘要生成失敗: {str(e)}")
             return {'error': str(e)}
     
-    def _create_error_result(self, error_msg: str) -> Dict[str, Any]:
+    def get_experiment_overview(self) -> Dict[str, Any]:
         """
-        創建錯誤結果
-        Create error result
+        獲取實驗概覽
+        Get experiment overview
+        
+        Returns:
+            Dict: 實驗概覽 / Experiment overview
         """
-        return {
-            'success': False,
-            'error': error_msg,
-            'data': {},
-            'plots': {}
-        }
+        try:
+            txt_data = self.data
+            overview = {
+                'experiment_name': txt_data.experiment_name,
+                'total_files': txt_data.total_files,
+                'signal_types': txt_data.signal_types,
+                'scan_resolution': f"{txt_data.scan_parameters.x_pixel}×{txt_data.scan_parameters.y_pixel}",
+                'scan_size': f"{txt_data.scan_parameters.x_range}×{txt_data.scan_parameters.y_range} nm",
+                'measurement_modes': list(set(f.get('measurement_mode', 'unknown') 
+                                           for f in txt_data.dat_files)),
+                'int_file_types': list(set(f.get('caption', 'Unknown') 
+                                        for f in txt_data.int_files))
+            }
+            
+            return overview
+            
+        except Exception as e:
+            self.logger.error(f"獲取實驗概覽失敗: {str(e)}")
+            return {'error': str(e)}
     
-    def validate_input(self, data: Any, **kwargs) -> bool:
+    def validate_input(self, **kwargs) -> bool:
         """
         驗證 TXT 輸入數據
         Validate TXT input data
         """
-        if not super().validate_input(data, **kwargs):
+        if not super().validate_input(**kwargs):
             return False
         
-        if not isinstance(data, dict):
-            self._add_error("輸入數據必須是字典")
+        if not isinstance(self.data, TxtData):
+            self._add_error("數據必須是 TxtData 類型")
             return False
         
-        # 檢查必要欄位 / Check required fields
-        required_fields = ['experiment_info']
-        for field in required_fields:
-            if field not in data:
-                self._add_error(f"缺少必要欄位: {field}")
-                return False
+        if not self.data.experiment_info:
+            self._add_error("TxtData 缺少 experiment_info")
+            return False
+        
+        if not self.data.scan_parameters:
+            self._add_error("TxtData 缺少 scan_parameters")
+            return False
         
         return True
