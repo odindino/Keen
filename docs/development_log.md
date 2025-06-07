@@ -149,6 +149,38 @@ This document records the development history of the KEEN project to track and u
 
 ---
 
+## 2025-June-08
+
+### INT 檔案互動式分析測試改進 / INT File Interactive Analysis Test Improvements
+- 針對用戶反饋的 widget 載入問題，創建簡化版測試筆記本
+- 移除所有 widget 依賴，改用直接修改程式碼的方式
+- 新增檔案：`backend/test/notebooks/int_analysis_simple.ipynb`
+- 主要特點：
+  - 清晰的設定區域，標註修改位置
+  - 正確使用 `ExperimentSession(txt_file_path)` 初始化
+  - 保留完整功能：載入檔案、平面化、座標選擇、剖面生成
+  - 使用 Plotly 進行所有視覺化
+  - 提供雙視圖顯示（像素座標和物理座標）
+- 修復的問題：
+  - `ExperimentSession` 初始化時缺少必要參數
+  - 檔案鍵值查找邏輯改進
+  - 添加詳細的錯誤訊息和使用提示
+- Created simplified test notebook based on user feedback about widget loading issues
+- Removed all widget dependencies, changed to direct code modification approach
+- New file: `backend/test/notebooks/int_analysis_simple.ipynb`
+- Key features:
+  - Clear configuration area with marked modification locations
+  - Correct usage of `ExperimentSession(txt_file_path)` initialization
+  - Full functionality retained: file loading, flattening, coordinate selection, profile generation
+  - Uses Plotly for all visualizations
+  - Provides dual-view display (pixel and physical coordinates)
+- Fixed issues:
+  - Missing required parameter in `ExperimentSession` initialization
+  - Improved file key lookup logic
+  - Added detailed error messages and usage hints
+
+---
+
 ## 開發規範 / Development Guidelines
 
 ### 記錄格式 / Log Format
