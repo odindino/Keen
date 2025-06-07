@@ -57,8 +57,24 @@ class CitsAnalyzer(BaseAnalyzer):
                 'bias_values': self.data.bias_values,
                 'grid_size': self.data.grid_size,
                 'x_range': self.data.x_range,
-                'y_range': self.data.y_range
+                'y_range': self.data.y_range,
+                'measurement_mode': 'CITS'  # 添加必要的鍵
             }
+            
+            # 如果有原始解析結果，使用其中的額外信息
+            if hasattr(self.data, '_raw_parse_result'):
+                raw_data = self.data._raw_parse_result
+                cits_data_dict.update({
+                    'scan_direction': raw_data.get('scan_direction', 'downward'),
+                    'x_grid': raw_data.get('x_grid'),
+                    'y_grid': raw_data.get('y_grid'),
+                    'times': raw_data.get('times'),
+                    'distances': raw_data.get('distances')
+                })
+            else:
+                # 回退到默認值
+                cits_data_dict['scan_direction'] = 'downward'
+            
             self.cits_analysis = CITSAnalysis(cits_data_dict)
     
     def analyze(self, **kwargs) -> Dict[str, Any]:

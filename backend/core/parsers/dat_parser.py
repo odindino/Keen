@@ -243,6 +243,8 @@ class DatParser:
                 data_3d = measurement_data.reshape(
                     parsed_data['n_bias_points'], grid_y, grid_x
                 )
+                # 使用 prepare_cits_for_display 確保正確的方向顯示
+                data_3d = self.prepare_cits_for_display(data_3d, scan_direction)
             except ValueError as e:
                 raise ValueError(f"無法重塑測量數據為 3D 陣列: {e}")
             
@@ -264,7 +266,7 @@ class DatParser:
         except Exception as e:
             raise ValueError(f"處理 CITS 數據失敗: {e}")
     
-    def _process_sts_data(self, parsed_data, header_info, dat_info):
+    def _process_sts_data(self, parsed_data, header_info, dat_info=None):
         """處理 STS (單點或多點離散) 量測數據"""
         try:
             result = {
@@ -284,9 +286,11 @@ class DatParser:
         except Exception as e:
             raise ValueError(f"處理 STS 數據失敗: {e}")
     
-    def _determine_scan_direction(self, header_info, dat_info, grid_x, grid_y):
+    def _determine_scan_direction(self, header_info, dat_info, grid_x=None, grid_y=None):
         """判斷 CITS 掃描方向"""
         try:
+            from ..mathematics.geometry import GeometryUtils
+            
             x_coords = header_info['x_coords']
             y_coords = header_info['y_coords']
             
@@ -295,14 +299,14 @@ class DatParser:
             x_end, y_end = x_coords[-1], y_coords[-1]
             
             # 獲取實驗參數
-            angle = dat_info.get('angle', 0)
-            x_center = dat_info.get('x_center', 0)
-            y_center = dat_info.get('y_center', 0)
+            angle = dat_info.get('angle', 0) if dat_info else 0
+            x_center = dat_info.get('x_center', 0) if dat_info else 0
+            y_center = dat_info.get('y_center', 0) if dat_info else 0
             
             self.logger.debug(f"原始座標: 起始點({x_start:.3f}, {y_start:.3f}), 終點({x_end:.3f}, {y_end:.3f})")
             self.logger.debug(f"實驗參數: 角度={angle}°, 中心({x_center:.3f}, {y_center:.3f})")
             
-            # 座標旋轉正規化
+            # 座標旋轉正規化 - 使用數學函式庫
             x_start_rot, y_start_rot = self._rotate_coordinates(
                 x_start, y_start, x_center, y_center, angle
             )
@@ -330,34 +334,6 @@ class DatParser:
             self.logger.warning(f"掃描方向判斷失敗，使用預設值 'downward': {e}")
             return 'downward'
         
-    @staticmethod
-    def is_cits_data(data: Dict) -> bool:
-        """
-        檢查解析後的數據是否為 CITS 格式
-        
-        Args:
-            data: 從 parse() 方法返回的數據字典
-            
-        Returns:
-            bool: True 表示是 CITS 數據
-        """
-        # 方法1: 檢查明確的 measurement_mode 標記
-        if 'measurement_mode' in data and data['measurement_mode'] == 'CITS':
-            return True
-        
-        # 方法2: 檢查是否有 3D 數據結構
-        if 'data_3d' in data:
-            data_array = np.array(data['data_3d'])
-            if data_array.ndim == 3 and data_array.shape[0] >= 2:
-                return True
-        
-        # 方法3: 檢查網格尺寸信息
-        if 'grid_size' in data and isinstance(data['grid_size'], (list, tuple)):
-            grid_x, grid_y = data['grid_size']
-            if grid_x > 1 and grid_y > 1:
-                return True
-                
-        return False
     
     @staticmethod 
     def prepare_cits_for_display(data_3d: np.ndarray, scan_direction: str) -> np.ndarray:
@@ -374,7 +350,7 @@ class DatParser:
             
         Note:
             - 對於 downward 掃描：翻轉 Y 軸以修正方向
-            - 對於 upward 掃描：保持原始方向
+            - 對於 upward 掃描：保持原樣
             - 此操作創建視圖，而非複製（記憶體高效）
         """
         if data_3d.ndim != 3:
@@ -405,3 +381,32 @@ class DatParser:
         y_rot = math.sin(angle_rad) * x_shift + math.cos(angle_rad) * y_shift
         
         return x_rot, y_rot
+    
+    @staticmethod
+    def is_cits_data(data: Dict) -> bool:
+        """
+        檢查解析後的數據是否為 CITS 格式
+        
+        Args:
+            data: 從 parse() 方法返回的數據字典
+            
+        Returns:
+            bool: True 表示是 CITS 數據
+        """
+        # 方法1: 檢查明確的 measurement_mode 標記
+        if 'measurement_mode' in data and data['measurement_mode'] == 'CITS':
+            return True
+        
+        # 方法2: 檢查是否有 3D 數據結構
+        if 'data_3d' in data:
+            data_array = np.array(data['data_3d'])
+            if data_array.ndim == 3 and data_array.shape[0] >= 2:
+                return True
+        
+        # 方法3: 檢查網格尺寸信息
+        if 'grid_size' in data and isinstance(data['grid_size'], (list, tuple)):
+            grid_x, grid_y = data['grid_size']
+            if grid_x > 1 and grid_y > 1:
+                return True
+                
+        return False

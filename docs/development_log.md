@@ -97,6 +97,56 @@ This document records the development history of the KEEN project to track and u
   - Smart caching and memory management
   - Batch operations and search functionality
 
+### 交互式測試環境創建 / Interactive Testing Environment Created
+- 創建完整的 Jupyter notebook 測試環境：`backend/test/interactive_new_architecture_test.ipynb`
+- 主要功能：
+  - Widget 控制介面，支援檔案選擇和參數調節
+  - 拓撲圖分析和 Plotly 視覺化（原始/平坦化圖像）
+  - CITS 數據分析（偏壓切片、I-V 曲線繪製）
+  - 綜合功能測試（記憶體管理、批次操作、搜尋功能）
+- 修復 Plotly API 兼容性問題：
+  - 修正 `SPMPlotting.plot_topography()` 中的 `update_yaxis()` 錯誤
+  - 改用 `update_layout(yaxis=dict(scaleanchor="x", scaleratio=1))` 語法
+- 修復圖像方向問題：
+  - 添加 `autorange='reversed'` 修正 Plotly 默認的 Y 軸方向
+  - 解決 SPM 圖像上下顛倒的問題
+  - 同步修復拓撲圖和 CITS 偏壓切片的方向顯示
+- 提供完整的新架構功能驗證環境
+- Created complete Jupyter notebook testing environment: `backend/test/interactive_new_architecture_test.ipynb`
+- Key features:
+  - Widget control interface with file selection and parameter adjustment
+  - Topography analysis and Plotly visualization (raw/flattened images)
+  - CITS data analysis (bias slices, I-V curve plotting)
+  - Comprehensive function testing (memory management, batch operations, search)
+- Fixed Plotly API compatibility issues:
+  - Corrected `update_yaxis()` error in `SPMPlotting.plot_topography()`
+  - Changed to use `update_layout(yaxis=dict(scaleanchor="x", scaleratio=1))` syntax
+- Fixed image orientation issues:
+  - Added `autorange='reversed'` to correct Plotly's default Y-axis direction
+  - Resolved SPM image upside-down display problem
+  - Synchronized orientation fix for both topography and CITS bias slice visualization
+- Provides complete validation environment for new architecture functionality
+
+### 數據層級圖像方向修正完成 / Data-Level Image Orientation Fix Completed
+- 根據用戶反饋，移除了 Plotly 層級的 Y 軸翻轉設定，改為在數據解析階段處理
+- 修改內容：
+  - `int_parser.py`: 添加 `np.flipud(image_data)` 確保拓撲圖正確方向
+  - `dat_parser.py`: 正確集成 `prepare_cits_for_display()` 函數到 CITS 數據處理流程
+  - `spm_plots.py`: 移除 Y 軸反轉設定，保持簡潔的 Plotly 配置
+- 功能改進：
+  - 確保所有 SPM 圖像座標系統統一：(0,0) 在左下角
+  - 支援根據掃描方向智能調整 CITS 數據方向（upward/downward）
+  - 移除冗餘的 `is_cits_data` 和 `_rotate_coordinates` 函數重複
+- Based on user feedback, removed Plotly-level Y-axis reversal settings, changed to handle at data parsing stage
+- Modifications:
+  - `int_parser.py`: Added `np.flipud(image_data)` to ensure correct topography orientation
+  - `dat_parser.py`: Properly integrated `prepare_cits_for_display()` function into CITS data processing flow
+  - `smp_plots.py`: Removed Y-axis reversal settings, maintaining clean Plotly configuration
+- Feature improvements:
+  - Ensures unified SPM image coordinate system: (0,0) at bottom-left corner
+  - Supports intelligent CITS data orientation adjustment based on scan direction (upward/downward)
+  - Removed redundant `is_cits_data` and `_rotate_coordinates` function duplicates
+
 ---
 
 ## 開發規範 / Development Guidelines

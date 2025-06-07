@@ -507,6 +507,9 @@ class CitsManager(TypeManager):
             measurement_mode='CITS'
         )
         
+        # 保存原始解析結果以供分析器使用 / Store raw parse result for analyzer use
+        cits_data._raw_parse_result = raw_data
+        
         # 更新結果數據 / Update result data
         result.data = cits_data
         result.metadata.update({

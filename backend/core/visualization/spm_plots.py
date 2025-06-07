@@ -89,11 +89,10 @@ class SPMPlotting:
                 yaxis_title=y_title,
                 width=kwargs.get('width', 600),
                 height=kwargs.get('height', 600),
-                template="plotly_white"
+                template="plotly_white",
+                # 保持長寬比 / Maintain aspect ratio
+                yaxis=dict(scaleanchor="x", scaleratio=1)
             )
-            
-            # 保持長寬比 / Maintain aspect ratio
-            fig.update_yaxis(scaleanchor="x", scaleratio=1)
             
             return fig
             

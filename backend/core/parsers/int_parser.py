@@ -49,6 +49,9 @@ class IntParser:
             # 重塑為二維數組
             image_data = image_data.reshape(self.y_pixel, self.x_pixel)
             
+            # 翻轉 Y 軸以確保左下角為 (0,0) / Flip Y-axis to ensure bottom-left is (0,0)
+            image_data = np.flipud(image_data)
+            
             # 應用比例因子並轉換為浮點數
             image_data = image_data.astype(np.float64) * self.scale
             
