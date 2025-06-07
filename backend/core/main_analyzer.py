@@ -630,6 +630,67 @@ class MainAnalyzer:
             self.logger.error(f"獲取 INT 檔案 scale factor 時出錯: {str(e)}")
             return 1.0
     
+    def _get_dat_file_info(self, file_key: str, txt_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        從 TXT 解析結果中獲取特定 DAT 檔案的資訊
+        Get DAT file information from TXT parsing result
+        
+        Args:
+            file_key: DAT 檔案的鍵值 / DAT file key
+            txt_data: TXT 解析結果 / TXT parsing result
+            
+        Returns:
+            Dict: 該 DAT 檔案的相關資訊，包含量測模式、網格大小等
+        """
+        try:
+            # 從 TXT 解析結果中找到對應的 DAT 檔案資訊
+            dat_files = txt_data.get('dat_files', [])
+            
+            # 尋找匹配的檔案名稱（支援檔案名稱可能包含或不包含 .dat 副檔名）
+            target_filename = file_key if file_key.endswith('.dat') else f"{file_key}.dat"
+            
+            for dat_file_info in dat_files:
+                if dat_file_info.get('filename') == target_filename:
+                    # 提取掃描參數資訊
+                    scan_info = txt_data.get('scan_info', {})
+                    
+                    # 組合 DAT 檔案解析需要的資訊
+                    dat_info = {
+                        'measurement_mode': dat_file_info.get('measurement_type', 'unknown'),
+                        'grid_x': scan_info.get('x_pixel', 256),
+                        'grid_y': scan_info.get('y_pixel', 256),
+                        'header_cols': dat_file_info.get('header_cols'),
+                        'header_rows': dat_file_info.get('header_rows'),
+                        'average': dat_file_info.get('average'),
+                        'delays_raw': dat_file_info.get('delays_raw'),
+                        'slewrate_raw': dat_file_info.get('slewrate_raw'),
+                        'caption': dat_file_info.get('caption'),
+                        'signal_type': dat_file_info.get('signal_type'),
+                        'direction': dat_file_info.get('direction')
+                    }
+                    
+                    # 移除值為 None 的鍵
+                    dat_info = {k: v for k, v in dat_info.items() if v is not None}
+                    
+                    return dat_info
+            
+            # 如果找不到對應的 DAT 檔案資訊，記錄警告並返回基本資訊
+            self.logger.warning(f"未找到 DAT 檔案 {file_key} 的詳細資訊，使用基本設定")
+            scan_info = txt_data.get('scan_info', {})
+            return {
+                'measurement_mode': 'unknown',
+                'grid_x': scan_info.get('x_pixel', 256),
+                'grid_y': scan_info.get('y_pixel', 256)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"提取 DAT 檔案資訊時發生錯誤: {e}，使用基本設定")
+            return {
+                'measurement_mode': 'unknown',
+                'grid_x': 256,
+                'grid_y': 256
+            }
+
     def load_file(self, file_key: str, 
                   experiment_name: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -689,8 +750,11 @@ class MainAnalyzer:
                 
             elif file_type == 'dat':
                 # 載入 DAT 檔案 / Load DAT file
+                # 從 TXT 解析結果中獲取這個 DAT 檔案的相關資訊
+                dat_info = self._get_dat_file_info(file_key, experiment['txt_data'])
+                
                 dat_parser = self.parser_classes['dat']()
-                parsed_data = dat_parser.parse(file_path)
+                parsed_data = dat_parser.parse(file_path, dat_info)
                 
             else:
                 return self._create_error_result(f"不支援的檔案類型: {file_type}")
