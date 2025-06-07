@@ -9,7 +9,7 @@ CITS (Current Imaging Tunneling Spectroscopy) 數據分析模組
 - 偏壓模式檢測與切割
 - 能譜圖和能帶圖生成
 
-作者: KEEN 開發團隊
+作者: Odindino
 日期: 2025-06-05
 """
 
