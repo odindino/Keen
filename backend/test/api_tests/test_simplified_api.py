@@ -6,7 +6,8 @@ Test simplified API usage
 
 import sys
 import os
-sys.path.append('/Users/yangziliang/Git-Projects/keen')
+# 從 backend/test/api_tests/ 目錄向上導航到 keen/ 根目錄
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from backend.core.experiment_session import ExperimentSession
 
@@ -17,7 +18,7 @@ def test_simplified_api():
     
     try:
         # 您期望的簡化用法
-        session = ExperimentSession("/Users/yangziliang/Git-Projects/keen/testfile/20250521_Janus Stacking SiO2_13K_113.txt")
+        session = ExperimentSession(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'testfile', '20250521_Janus Stacking SiO2_13K_113.txt'))
         
         print("=== 簡化 API 測試 ===")
         

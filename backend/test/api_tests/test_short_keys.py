@@ -6,14 +6,15 @@ Test current short key generation results
 
 import sys
 import os
-sys.path.append('/Users/yangziliang/Git-Projects/keen')
+# 從 backend/test/api_tests/ 目錄向上導航到 keen/ 根目錄
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from backend.core.experiment_session import ExperimentSession
 
 def test_short_keys():
     """測試短鍵生成"""
     
-    txt_file_path = "/Users/yangziliang/Git-Projects/keen/testfile/20250521_Janus Stacking SiO2_13K_113.txt"
+    txt_file_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'testfile', '20250521_Janus Stacking SiO2_13K_113.txt')
     
     try:
         session = ExperimentSession(txt_file_path)

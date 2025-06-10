@@ -6,7 +6,8 @@ Complete simplified API demonstration
 
 import sys
 import os
-sys.path.append('/Users/yangziliang/Git-Projects/keen')
+# 從 backend/test/api_tests/ 目錄向上導航到 keen/ 根目錄
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from backend.core.experiment_session import ExperimentSession
 
@@ -19,7 +20,7 @@ def main():
     try:
         # 步驟 1: 使用簡化 API 初始化會話
         print("\n📂 步驟 1: 初始化實驗會話")
-        session = ExperimentSession("/Users/yangziliang/Git-Projects/keen/testfile/20250521_Janus Stacking SiO2_13K_113.txt")
+        session = ExperimentSession(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'testfile', '20250521_Janus Stacking SiO2_13K_113.txt'))
         print(f"✅ 會話建立成功: {session.experiment_name}")
         
         # 步驟 2: 使用簡化 API 直接訪問文件
