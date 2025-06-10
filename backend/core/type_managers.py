@@ -348,12 +348,42 @@ class TxtManager(TypeManager):
         
         raw_data = result.data
         exp_info = raw_data.get('experiment_info', {})
-        scan_params = ScanParameters(
-            x_pixel=int(exp_info.get('xPixel', 256)),
-            y_pixel=int(exp_info.get('yPixel', 256)),
-            x_range=float(exp_info.get('XScanRange', 100.0)),
-            y_range=float(exp_info.get('YScanRange', 100.0))
-        )
+        
+        # 安全地轉換參數值，處理可能的字符串格式
+        def safe_int_convert(value, default=256):
+            if isinstance(value, str):
+                try:
+                    return int(float(value.strip()))
+                except (ValueError, AttributeError):
+                    self.logger.warning(f"無法轉換為整數: {value}, 使用默認值 {default}")
+                    return default
+            return int(value) if value is not None else default
+        
+        def safe_float_convert(value, default=100.0):
+            if isinstance(value, str):
+                try:
+                    return float(value.strip())
+                except (ValueError, AttributeError):
+                    self.logger.warning(f"無法轉換為浮點數: {value}, 使用默認值 {default}")
+                    return default
+            return float(value) if value is not None else default
+        
+        try:
+            scan_params = ScanParameters(
+                x_pixel=safe_int_convert(exp_info.get('xPixel', 256)),
+                y_pixel=safe_int_convert(exp_info.get('yPixel', 256)),
+                x_range=safe_float_convert(exp_info.get('XScanRange', 100.0)),
+                y_range=safe_float_convert(exp_info.get('YScanRange', 100.0))
+            )
+        except Exception as e:
+            self.logger.error(f"創建 ScanParameters 失敗: {e}")
+            # 使用默認值創建 ScanParameters
+            scan_params = ScanParameters(
+                x_pixel=256,
+                y_pixel=256,
+                x_range=100.0,
+                y_range=100.0
+            )
         
         txt_data = TxtData(
             experiment_info=exp_info,

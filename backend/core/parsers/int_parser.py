@@ -12,10 +12,17 @@ class IntParser:
     
     def __init__(self, file_path, scale, x_pixel, y_pixel):
         self.file_path = file_path
-        self.scale = scale
-        self.x_pixel = x_pixel
-        self.y_pixel = y_pixel
+        # 確保所有參數都是正確的數值類型
+        try:
+            self.scale = float(scale) if isinstance(scale, str) else float(scale)
+            self.x_pixel = int(x_pixel) if isinstance(x_pixel, str) else int(x_pixel)
+            self.y_pixel = int(y_pixel) if isinstance(y_pixel, str) else int(y_pixel)
+        except (ValueError, TypeError) as e:
+            logger.error(f"參數類型轉換失敗: scale={scale}, x_pixel={x_pixel}, y_pixel={y_pixel}, 錯誤: {e}")
+            raise ValueError(f"IntParser 初始化失敗: 無效的參數類型")
+        
         self.data = None
+        logger.info(f"IntParser 初始化: {self.x_pixel}×{self.y_pixel}, scale={self.scale}")
     
     def parse(self) -> ParseResult:
         """
@@ -35,15 +42,21 @@ class IntParser:
             with open(self.file_path, 'rb') as f:
                 int_file = f.read()
             
-            # 檢查檔案長度是否符合預期
+            # 計算預期檔案大小
             expected_length = self.x_pixel * self.y_pixel * 4  # 每個像素 4 位元組
-            if len(int_file) != expected_length:
-                warning_msg = f"檔案長度 ({len(int_file)}) 與預期不符 ({expected_length})"
-                logger.warning(warning_msg)
-                result.add_warning(warning_msg)
+            actual_length = len(int_file)
+            
+            logger.info(f"檔案大小檢查: 預期={expected_length} bytes ({self.x_pixel}×{self.y_pixel}), 實際={actual_length} bytes")
+            
+            # 檢查檔案長度是否符合預期
+            if actual_length != expected_length:
+                error_msg = f"檔案長度不匹配: 預期 {expected_length} bytes ({self.x_pixel}×{self.y_pixel}×4), 實際 {actual_length} bytes"
+                logger.error(error_msg)
+                result.add_error(error_msg)
+                return result
             
             # 使用 numpy 直接解析數據
-            n_pixels = len(int_file) // 4
+            n_pixels = actual_length // 4
             image_data = np.frombuffer(int_file, dtype='<i4', count=n_pixels)
             
             # 重塑為二維數組

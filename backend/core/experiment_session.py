@@ -64,11 +64,11 @@ class ExperimentSession:
         self.available_files: Dict[str, List[str]] = {"txt": [], "int": [], "cits": [], "sts": []}
 
         # Initialize managers
-        # Assuming managers take base_path or similar configuration
-        self.txt_manager = TxtManager(self.base_path)
-        self.topo_manager = TopoManager(self.base_path)
-        self.cits_manager = CitsManager(self.base_path)
-        self.sts_manager = StsManager(self.base_path)
+        # Pass session reference to managers for accessing TXT data
+        self.txt_manager = TxtManager(cache_size=20, session=self)
+        self.topo_manager = TopoManager(cache_size=20, session=self)
+        self.cits_manager = CitsManager(cache_size=20, session=self)
+        self.sts_manager = StsManager(cache_size=20, session=self)
 
         self._manager_map: Dict[str, Any] = {
             "txt": self.txt_manager,
