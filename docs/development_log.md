@@ -179,6 +179,88 @@ This document records the development history of the KEEN project to track and u
   - Improved file key lookup logic
   - Added detailed error messages and usage hints
 
+### CITS 分析與能帶/能譜圖測試筆記本創建 / CITS Analysis with Band/Spectrum Testing Notebooks Created
+- 應用戶需求創建 CITS 影像分析和能帶/能譜圖測試工具
+- 新增檔案：
+  - `backend/test/notebooks/cits_analysis_with_profiles.ipynb` - 完整版（含 widgets）
+  - `backend/test/notebooks/cits_analysis_simple.ipynb` - 簡化版（無 widgets）
+- 主要功能：
+  - CITS 檔案載入和基本資訊顯示
+  - 偏壓切片顯示（可調整偏壓索引）
+  - 單點能譜提取（I-V 曲線和 dI/dV 計算）
+  - 能帶剖面分析（沿線提取光譜數據）
+  - dI/dV map 計算和顯示
+  - 分析位置標記和可視化
+- 技術實現：
+  - 直接從 CITS 數據提取能譜，無需額外分析器
+  - 使用 Bresenham 算法進行線採樣
+  - 數值微分計算 dI/dV
+  - 多子圖布局顯示能帶圖、平均能譜和標準差
+  - 雙視圖比較電流圖和 dI/dV 圖
+- Created CITS image analysis and band/spectrum testing tools per user request
+- New files:
+  - `backend/test/notebooks/cits_analysis_with_profiles.ipynb` - Full version (with widgets)
+  - `backend/test/notebooks/cits_analysis_simple.ipynb` - Simplified version (no widgets)
+- Key features:
+  - CITS file loading and basic information display
+  - Bias slice display (adjustable bias index)
+  - Single point spectrum extraction (I-V curves and dI/dV calculation)
+  - Band profile analysis (line spectrum extraction)
+  - dI/dV map calculation and display
+  - Analysis position marking and visualization
+- Technical implementation:
+  - Direct spectrum extraction from CITS data without additional analyzers
+  - Bresenham algorithm for line sampling
+  - Numerical differentiation for dI/dV calculation
+  - Multi-subplot layout showing band maps, average spectra and standard deviation
+  - Dual-view comparison of current maps and dI/dV maps
+
+### CITS 函式庫工作流程實現 / CITS Library Workflow Implementation
+- 應用戶需求，完成基於函式庫的 CITS 分析工作流程
+- 實現目標：最少自定義程式碼，使用標準化繪圖函數
+- 新增檔案：
+  - `backend/core/visualization/spectroscopy_plots.py` - 添加三個新繪圖函數
+  - `backend/core/analysis/cits_analysis.py` - 添加四個數據提取輔助函數
+  - `backend/test/cits_workflow_test.ipynb` - 函式庫導向的測試筆記本
+  - `docs/cits_function_specifications.md` - 完整的函數規格說明書
+- 新增繪圖函數：
+  - `plot_cits_bias_slice()` - CITS 偏壓切片顯示（可調整索引）
+  - `plot_band_diagram()` - 線剖面能帶圖（位置 vs 偏壓熱力圖）
+  - `plot_stacked_spectra()` - 堆疊光譜圖（可調整偏移係數）
+- 新增數據提取函數：
+  - `extract_cits_bias_slice()` - 提取特定偏壓切片數據
+  - `extract_line_spectra_data()` - 提取線剖面光譜數據（簡化版）
+  - `extract_point_spectrum()` - 提取單點光譜數據（含 dI/dV 計算）
+  - `prepare_stacked_spectra_data()` - 準備堆疊光譜數據（智能選擇）
+- 工作流程特點：
+  - 清晰的數據流：載入 → 提取 → 繪圖
+  - 統一的函數介面和返回格式
+  - 完整的錯誤處理和參數驗證
+  - 支援所有主要的 CITS 視覺化需求
+- 符合用戶需求：「有繪圖的函數，可以讓我丟進數據就產生圖片」
+- Based on user requirements, completed library-based CITS analysis workflow
+- Implementation goal: minimal custom code, using standardized plotting functions
+- New files:
+  - `backend/core/visualization/spectroscopy_plots.py` - Added three new plotting functions
+  - `backend/core/analysis/cits_analysis.py` - Added four data extraction helper functions
+  - `backend/test/cits_workflow_test.ipynb` - Library-oriented test notebook
+  - `docs/cits_function_specifications.md` - Complete function specification document
+- New plotting functions:
+  - `plot_cits_bias_slice()` - CITS bias slice display (adjustable index)
+  - `plot_band_diagram()` - Line profile band diagram (position vs bias heatmap)
+  - `plot_stacked_spectra()` - Stacked spectra plot (adjustable offset factor)
+- New data extraction functions:
+  - `extract_cits_bias_slice()` - Extract specific bias slice data
+  - `extract_line_spectra_data()` - Extract line profile spectra data (simplified)
+  - `extract_point_spectrum()` - Extract single point spectrum data (with dI/dV calculation)
+  - `prepare_stacked_spectra_data()` - Prepare stacked spectra data (intelligent selection)
+- Workflow features:
+  - Clear data flow: load → extract → plot
+  - Unified function interfaces and return formats
+  - Complete error handling and parameter validation
+  - Support for all major CITS visualization requirements
+- Meets user requirement: "functions that can take data and produce plots"
+
 ---
 
 ## 開發規範 / Development Guidelines

@@ -412,3 +412,247 @@ class SpectroscopyPlotting:
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
+    
+    @staticmethod
+    def plot_cits_bias_slice(data_3d: np.ndarray,
+                            bias_values: np.ndarray,
+                            bias_index: int,
+                            title: Optional[str] = None,
+                            colorscale: str = 'Viridis',
+                            **kwargs) -> go.Figure:
+        """
+        繪製 CITS 特定偏壓切片
+        Plot CITS bias slice at specific index
+        
+        Args:
+            data_3d: 3D CITS 數據 (n_bias, y, x) / 3D CITS data
+            bias_values: 偏壓值陣列 / Bias values array
+            bias_index: 偏壓索引 / Bias index
+            title: 圖片標題 / Image title (optional)
+            colorscale: 顏色方案 / Color scale
+            **kwargs: 額外參數 / Additional parameters
+            
+        Returns:
+            go.Figure: Plotly 圖形對象 / Plotly figure object
+        """
+        try:
+            # 驗證索引 / Validate index
+            if not (0 <= bias_index < len(bias_values)):
+                raise IndexError(f"Bias index {bias_index} out of range [0, {len(bias_values)-1}]")
+            
+            # 提取 2D 切片 / Extract 2D slice
+            slice_data = data_3d[bias_index, :, :]
+            bias_value = bias_values[bias_index]
+            
+            # 生成標題 / Generate title
+            if title is None:
+                title = f"CITS Bias Slice at {bias_value:.3f} V (Index: {bias_index})"
+            
+            fig = go.Figure()
+            
+            # 添加熱力圖 / Add heatmap
+            fig.add_trace(go.Heatmap(
+                z=slice_data,
+                colorscale=colorscale,
+                showscale=True,
+                colorbar=dict(title="Current (A)"),
+                hovertemplate='X: %{x}<br>Y: %{y}<br>Current: %{z:.2e} A<extra></extra>'
+            ))
+            
+            # 更新布局 / Update layout
+            fig.update_layout(
+                title=title,
+                xaxis_title="X Position (pixel)",
+                yaxis_title="Y Position (pixel)",
+                width=kwargs.get('width', 600),
+                height=kwargs.get('height', 600),
+                template="plotly_white",
+                yaxis=dict(scaleanchor="x", scaleratio=1)  # 保持長寬比
+            )
+            
+            return fig
+            
+        except Exception as e:
+            logger.error(f"CITS 偏壓切片繪製失敗: {str(e)}")
+            return go.Figure().add_annotation(
+                text=f"繪圖錯誤: {str(e)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+    
+    @staticmethod
+    def plot_band_diagram(line_spectra: np.ndarray,
+                         bias_values: np.ndarray,
+                         distances: Optional[np.ndarray] = None,
+                         title: str = "Band Diagram",
+                         use_log_scale: bool = False,
+                         colorscale: str = 'Viridis',
+                         **kwargs) -> go.Figure:
+        """
+        繪製能帶圖（線剖面的偏壓 vs 位置熱力圖）
+        Plot band diagram (bias vs position heatmap from line profile)
+        
+        Args:
+            line_spectra: 線剖面光譜數據 (n_bias, n_points) / Line profile spectra data
+            bias_values: 偏壓值陣列 / Bias values array
+            distances: 距離陣列（可選）/ Distance array (optional)
+            title: 圖片標題 / Image title
+            use_log_scale: 是否使用對數尺度 / Whether to use log scale
+            colorscale: 顏色方案 / Color scale
+            **kwargs: 額外參數 / Additional parameters
+            
+        Returns:
+            go.Figure: Plotly 圖形對象 / Plotly figure object
+        """
+        try:
+            # 驗證輸入數據 / Validate input data
+            if line_spectra.size == 0 or len(bias_values) == 0:
+                raise ValueError("輸入數據為空")
+            
+            if line_spectra.shape[0] != len(bias_values):
+                raise ValueError(f"數據形狀不匹配: line_spectra.shape[0]={line_spectra.shape[0]}, len(bias_values)={len(bias_values)}")
+            
+            # 準備數據 / Prepare data - 使用絕對值避免負值問題
+            if use_log_scale:
+                plot_data = np.log10(np.abs(line_spectra) + 1e-15)
+                colorbar_title = "log₁₀|Current| (A)"
+            else:
+                plot_data = np.abs(line_spectra)
+                colorbar_title = "|Current| (A)"
+            
+            # 生成位置軸 / Generate position axis
+            if distances is None:
+                # 使用 1-based 索引，類似成功範例
+                position_axis = list(range(1, line_spectra.shape[1] + 1))
+                x_title = "Position (pixel)"
+            else:
+                position_axis = distances
+                x_title = "Distance (pixel)" if hasattr(distances, 'dtype') and distances.dtype == int else "Distance (nm)"
+            
+            # 記錄調試信息
+            logger.info(f"能帶圖數據: shape={plot_data.shape}, bias_range=({bias_values.min():.3f}, {bias_values.max():.3f})V")
+            logger.info(f"數據範圍: {np.min(plot_data):.2e} 到 {np.max(plot_data):.2e}")
+            
+            fig = go.Figure()
+            
+            # 添加熱力圖 / Add heatmap (參考成功範例的配置)
+            fig.add_trace(go.Heatmap(
+                z=plot_data,  # (n_bias, n_points)
+                x=position_axis,  # 位置軸
+                y=bias_values,    # 偏壓軸
+                colorscale=colorscale,
+                showscale=True,
+                zsmooth='best',
+                colorbar=dict(
+                    title=dict(text=colorbar_title, side="right")
+                ),
+                hovertemplate='Position: %{x}<br>Bias: %{y:.3f} V<br>Intensity: %{z:.2e}<extra></extra>'
+            ))
+            
+            # 更新布局 / Update layout
+            scale_info = 'Log Scale' if use_log_scale else 'Linear Scale'
+            fig.update_layout(
+                title=f"{title} ({scale_info})",
+                xaxis_title=x_title,
+                yaxis_title="Bias Voltage (V)",
+                width=kwargs.get('width', 800),
+                height=kwargs.get('height', 600),
+                template="plotly_white"
+            )
+            
+            return fig
+            
+        except Exception as e:
+            logger.error(f"能帶圖繪製失敗: {str(e)}")
+            import traceback
+            logger.error(f"詳細錯誤: {traceback.format_exc()}")
+            return go.Figure().add_annotation(
+                text=f"繪圖錯誤: {str(e)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+    
+    @staticmethod
+    def plot_stacked_spectra(line_spectra: np.ndarray,
+                           bias_values: np.ndarray,
+                           offset_factor: float = 1.0,
+                           positions: Optional[np.ndarray] = None,
+                           max_curves: int = 20,
+                           title: str = "Stacked Spectra",
+                           **kwargs) -> go.Figure:
+        """
+        繪製堆疊光譜圖（多條 STS 曲線，帶垂直偏移）
+        Plot stacked spectra (multiple STS curves with vertical offset)
+        
+        Args:
+            line_spectra: 線剖面光譜數據 (n_bias, n_points) / Line profile spectra data
+            bias_values: 偏壓值陣列 / Bias values array
+            offset_factor: 偏移係數 / Offset factor
+            positions: 位置陣列（可選）/ Position array (optional)
+            max_curves: 最大顯示曲線數 / Maximum number of curves to display
+            title: 圖片標題 / Image title
+            **kwargs: 額外參數 / Additional parameters
+            
+        Returns:
+            go.Figure: Plotly 圖形對象 / Plotly figure object
+        """
+        try:
+            n_positions = line_spectra.shape[1]
+            
+            # 選擇要顯示的位置 / Select positions to display
+            if n_positions > max_curves:
+                step = max(1, n_positions // max_curves)
+                positions_to_plot = range(0, n_positions, step)
+            else:
+                positions_to_plot = range(n_positions)
+            
+            # 計算偏移量 / Calculate offsets
+            data_range = np.max(line_spectra) - np.min(line_spectra)
+            offset_step = offset_factor * data_range
+            
+            fig = go.Figure()
+            
+            # 顏色映射 / Color mapping
+            colors = [f'hsl({i * 360 / len(positions_to_plot)}, 70%, 50%)' 
+                     for i in range(len(positions_to_plot))]
+            
+            # 添加每條光譜 / Add each spectrum
+            for i, pos_idx in enumerate(positions_to_plot):
+                spectrum = line_spectra[:, pos_idx]
+                offset = i * offset_step
+                
+                # 生成標籤 / Generate label
+                if positions is not None:
+                    label = f'Pos {pos_idx} ({positions[pos_idx]:.1f})'
+                else:
+                    label = f'Position {pos_idx}'
+                
+                fig.add_trace(go.Scatter(
+                    x=bias_values,
+                    y=spectrum + offset,
+                    mode='lines',
+                    name=label,
+                    line=dict(color=colors[i], width=1.5),
+                    hovertemplate=f'{label}<br>Bias: %{{x:.3f}} V<br>Current: %{{y:.2e}} A<extra></extra>'
+                ))
+            
+            # 更新布局 / Update layout
+            fig.update_layout(
+                title=f"{title}<br><sub>Showing {len(positions_to_plot)} of {n_positions} spectra (offset: {offset_factor:.1f}×)</sub>",
+                xaxis_title="Bias Voltage (V)",
+                yaxis_title="Current (A) + Offset",
+                width=kwargs.get('width', 800),
+                height=kwargs.get('height', 700),
+                template="plotly_white",
+                hovermode='closest'
+            )
+            
+            return fig
+            
+        except Exception as e:
+            logger.error(f"堆疊光譜圖繪製失敗: {str(e)}")
+            return go.Figure().add_annotation(
+                text=f"繪圖錯誤: {str(e)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )

@@ -747,3 +747,220 @@ def analyze_cits_line(cits_data: Dict,
         'sliced_data': sliced_data,
         'summary': summary
     }
+
+
+# 數據提取輔助函數 / Data extraction helper functions
+def extract_cits_bias_slice(cits_data: Dict, bias_index: int) -> Dict:
+    """
+    提取 CITS 特定偏壓切片數據
+    Extract CITS bias slice data at specific index
+    
+    Args:
+        cits_data: CITS 數據字典 / CITS data dictionary
+        bias_index: 偏壓索引 / Bias index
+        
+    Returns:
+        Dict: 包含 2D 數據和相關資訊 / Dictionary with 2D data and related info
+    """
+    try:
+        data_3d = cits_data['data_3d']
+        bias_values = cits_data['bias_values']
+        
+        if not (0 <= bias_index < len(bias_values)):
+            raise IndexError(f"Bias index {bias_index} out of range [0, {len(bias_values)-1}]")
+        
+        return {
+            'slice_data': data_3d[bias_index, :, :],
+            'bias_value': bias_values[bias_index],
+            'bias_index': bias_index,
+            'grid_size': cits_data.get('grid_size', data_3d.shape[1:]),
+            'x_range': cits_data.get('x_range', data_3d.shape[2]),
+            'y_range': cits_data.get('y_range', data_3d.shape[1])
+        }
+    except Exception as e:
+        logger.error(f"CITS 偏壓切片提取失敗: {str(e)}")
+        raise
+
+
+def extract_line_spectra_data(cits_data: Dict, 
+                             start_coord: Tuple[int, int], 
+                             end_coord: Tuple[int, int],
+                             sampling_method: str = 'bresenham',
+                             use_forward_only: bool = True) -> Dict:
+    """
+    提取線剖面光譜數據（簡化版，直接返回繪圖所需數據）
+    Extract line profile spectra data (simplified version for direct plotting)
+    
+    Args:
+        cits_data: CITS 數據字典 / CITS data dictionary
+        start_coord: 起始座標 / Start coordinate
+        end_coord: 終點座標 / End coordinate
+        sampling_method: 採樣方法 / Sampling method
+        use_forward_only: 是否只使用前向段數據 / Whether to use forward segment only
+        
+    Returns:
+        Dict: 包含線剖面光譜數據 / Dictionary with line profile spectra data
+    """
+    try:
+        # 創建分析器
+        analyzer = CITSAnalysis(cits_data)
+        
+        # 提取線段剖面
+        line_profile = analyzer.extract_line_profile(
+            start_coord, end_coord, sampling_method=sampling_method
+        )
+        
+        # 檢測偏壓模式
+        if use_forward_only:
+            bias_pattern = analyzer.detect_bias_pattern()
+            
+            # 如果有前向段，只使用第一個前向段
+            if bias_pattern['forward_segments']:
+                forward_seg = bias_pattern['forward_segments'][0]
+                start_idx, end_idx = forward_seg
+                
+                # 提取前向段數據
+                forward_bias = line_profile['bias_values'][start_idx:end_idx+1]
+                forward_spectra = line_profile['line_sts'][start_idx:end_idx+1, :]
+                
+                logger.info(f"使用前向段數據: 偏壓範圍 {forward_bias[0]:.3f}V 到 {forward_bias[-1]:.3f}V")
+                
+                return {
+                    'line_spectra': forward_spectra,  # (n_bias_forward, n_points)
+                    'bias_values': forward_bias,
+                    'distances': line_profile['positions'],  # 位置陣列
+                    'x_coords': line_profile['x_coords'],
+                    'y_coords': line_profile['y_coords'],
+                    'n_points': line_profile['n_points'],
+                    'physical_length': line_profile['physical_length'],
+                    'sampling_method': sampling_method,
+                    'segment_type': 'forward',
+                    'bias_pattern': bias_pattern
+                }
+            else:
+                logger.warning("沒有檢測到前向段，使用完整數據")
+        
+        # 返回完整數據格式
+        return {
+            'line_spectra': line_profile['line_sts'],  # (n_bias, n_points)
+            'bias_values': line_profile['bias_values'],
+            'distances': line_profile['positions'],  # 位置陣列
+            'x_coords': line_profile['x_coords'],
+            'y_coords': line_profile['y_coords'],
+            'n_points': line_profile['n_points'],
+            'physical_length': line_profile['physical_length'],
+            'sampling_method': sampling_method,
+            'segment_type': 'full'
+        }
+    except Exception as e:
+        logger.error(f"線剖面光譜提取失敗: {str(e)}")
+        raise
+
+
+def extract_point_spectrum(cits_data: Dict, x: int, y: int) -> Dict:
+    """
+    提取單點光譜數據
+    Extract single point spectrum data
+    
+    Args:
+        cits_data: CITS 數據字典 / CITS data dictionary
+        x: X 座標 / X coordinate
+        y: Y 座標 / Y coordinate
+        
+    Returns:
+        Dict: 包含單點光譜數據 / Dictionary with single point spectrum data
+    """
+    try:
+        data_3d = cits_data['data_3d']
+        bias_values = cits_data['bias_values']
+        
+        # 驗證座標
+        if not (0 <= x < data_3d.shape[2] and 0 <= y < data_3d.shape[1]):
+            raise IndexError(f"Coordinates ({x}, {y}) out of range")
+        
+        # 提取光譜
+        spectrum = data_3d[:, y, x]
+        
+        # 計算 dI/dV（電導率）
+        conductance = np.zeros_like(spectrum)
+        if len(bias_values) > 1:
+            # 中央差分法
+            for i in range(1, len(bias_values) - 1):
+                dI = spectrum[i+1] - spectrum[i-1]
+                dV = bias_values[i+1] - bias_values[i-1]
+                conductance[i] = dI / dV
+            
+            # 邊界處理
+            conductance[0] = (spectrum[1] - spectrum[0]) / (bias_values[1] - bias_values[0])
+            conductance[-1] = (spectrum[-1] - spectrum[-2]) / (bias_values[-1] - bias_values[-2])
+        
+        return {
+            'current': spectrum,
+            'conductance': conductance,
+            'bias_values': bias_values,
+            'position': (x, y),
+            'n_points': len(spectrum)
+        }
+    except Exception as e:
+        logger.error(f"單點光譜提取失敗: {str(e)}")
+        raise
+
+
+def prepare_stacked_spectra_data(line_spectra: np.ndarray, 
+                                bias_values: np.ndarray,
+                                max_curves: int = 20,
+                                step_selection: str = 'uniform') -> Dict:
+    """
+    準備堆疊光譜數據（選擇要顯示的曲線）
+    Prepare stacked spectra data (select curves to display)
+    
+    Args:
+        line_spectra: 線剖面光譜數據 (n_bias, n_points) / Line profile spectra data
+        bias_values: 偏壓值陣列 / Bias values array
+        max_curves: 最大顯示曲線數 / Maximum number of curves
+        step_selection: 選擇方式 ('uniform', 'endpoints') / Selection method
+        
+    Returns:
+        Dict: 準備好的堆疊光譜數據 / Prepared stacked spectra data
+    """
+    try:
+        n_positions = line_spectra.shape[1]
+        
+        if step_selection == 'uniform':
+            # 均勻選擇
+            if n_positions > max_curves:
+                step = max(1, n_positions // max_curves)
+                selected_indices = list(range(0, n_positions, step))
+            else:
+                selected_indices = list(range(n_positions))
+        elif step_selection == 'endpoints':
+            # 包含端點的選擇
+            if n_positions <= max_curves:
+                selected_indices = list(range(n_positions))
+            else:
+                # 確保包含第一個和最後一個
+                middle_count = max_curves - 2
+                if middle_count > 0:
+                    middle_indices = np.linspace(1, n_positions-2, middle_count, dtype=int)
+                    selected_indices = [0] + middle_indices.tolist() + [n_positions-1]
+                else:
+                    selected_indices = [0, n_positions-1]
+        else:
+            raise ValueError(f"未知的選擇方式: {step_selection}")
+        
+        # 提取選定的光譜
+        selected_spectra = line_spectra[:, selected_indices]
+        selected_positions = np.array(selected_indices)
+        
+        return {
+            'selected_spectra': selected_spectra,
+            'selected_positions': selected_positions,
+            'selected_indices': selected_indices,
+            'bias_values': bias_values,
+            'n_selected': len(selected_indices),
+            'total_positions': n_positions,
+            'selection_method': step_selection
+        }
+    except Exception as e:
+        logger.error(f"堆疊光譜數據準備失敗: {str(e)}")
+        raise
