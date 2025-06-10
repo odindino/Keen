@@ -326,9 +326,15 @@ class ExperimentSession:
                 all_fks.add(fk)
         return sorted(list(all_fks))
 
-    def get_topo_files(self) -> List[str]:
-        """Returns a list of available topography file keys."""
+    def get_int_files(self) -> List[str]:
+        """Returns a list of available INT file keys."""
         return self.available_files.get('int', [])
+
+    def get_dat_files(self) -> List[str]:
+        """Returns a list of available DAT file keys (both CITS and STS)."""
+        cits_files = self.available_files.get('cits', [])
+        sts_files = self.available_files.get('sts', [])
+        return cits_files + sts_files
 
     def get_cits_files(self) -> List[str]:
         """Returns a list of available CITS file keys."""
