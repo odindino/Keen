@@ -16,8 +16,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For any questions or suggestions, please contact us through:
 
-- GitHub Issues: [提交問題](https://github.com/yangziliang04/keen/issues)
-- Email: yangziliang04@gmail.com數據處理能力。
+- GitHub Issues: [提交問題](https://github.com/odindino/keen/issues)
 
 Keen is a high-performance framework designed for Scanning Probe Microscopy (SPM) data analysis, featuring a modular architecture that provides professional scientific data processing capabilities.
 
